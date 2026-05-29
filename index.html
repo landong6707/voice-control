@@ -23,21 +23,14 @@
         .tips { color: #64748b; font-size: 14px; line-height: 1.6; margin: 8px 0; }
         .result { color: #2563eb; font-weight: 600; font-size: 16px; margin: 10px 0; min-height: 22px; }
         .status { color: #64748b; font-size: 13px; line-height: 1.5; }
-        .env-info { background: #f1f5f9; border-radius: 8px; padding: 12px; font-size: 13px; line-height: 1.6; }
-        .warn { color: #dc2626; }
-        .ok { color: #16a34a; }
-        .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; margin-right: 6px; background: #e2e8f0; }
+        .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #22c55e; margin-right: 6px; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
     </style>
 </head>
 <body>
 <div class="container">
     <h1>🎤 语音控制音视频</h1>
-    <p class="tips">支持命令：播放视频、暂停视频、播放音乐、暂停音乐</p>
-
-    <div class="card">
-        <h3>📱 当前环境</h3>
-        <div class="env-info" id="envInfo">检测中...</div>
-    </div>
+    <p class="tips">支持命令：播放视频、暂停视频、播放音乐、暂停音乐<br>开启后持续监听，断开会自动重连，无需反复点击。</p>
 
     <div class="card">
         <h3>🔑 讯飞语音识别</h3>
@@ -76,32 +69,28 @@
     const voiceBtn = $('voiceBtn');
     const result = $('result');
     const statusEl = $('status');
-    const envInfo = $('envInfo');
     const video = $('video');
     const audio = $('audio');
 
-    const UA = navigator.userAgent;
-    const env = {
-        isIOS: /iPhone|iPad|iPod/i.test(UA),
-        isMac: /Macintosh|Mac OS X/i.test(UA),
-        isSafari: /Safari/i.test(UA) && !/Chrome|CriOS|Edg|OPR/i.test(UA),
-        isSecure: window.isSecureContext
-    };
-
-    let isListening = false;
+    let isListening = false;      // 用户是否想持续监听
     let isBusy = false;
-    let manualStop = false;
+    let manualStop = false;       // 用户手动关闭
     let ws = null;
     let audioContext = null;
     let processor = null;
     let mediaStream = null;
     let sendInterval = null;
+    let reconnectTimer = null;
+    let isConnecting = false;
     let pcmBuffer = [];
     let frameStatus = 0;
     let fullText = '';
+    let reconnectCount = 0;
 
     function setStatus(msg) {
-        statusEl.textContent = msg;
+        statusEl.innerHTML = isListening
+            ? `<span class="dot"></span>${msg}`
+            : msg;
         console.log('[status]', msg);
     }
 
@@ -113,172 +102,132 @@
         };
     }
 
-    function detectEnvironment() {
-        const os = env.isIOS ? 'iOS' : env.isMac ? 'macOS' : '其他';
-        const browser = env.isSafari ? 'Safari' : 'Chrome/Edge 等';
-        envInfo.innerHTML =
-            `<span class="tag">${os}</span><span class="tag">${browser}</span><br>` +
-            (env.isSecure ? '<div class="ok">✅ HTTPS 环境正常</div>' : '<div class="warn">⚠️ 请用 HTTPS 打开</div>') +
-            (env.isSafari ? '<div class="warn">⚠️ Safari 对音频限制较多，Mac 建议优先用 Chrome</div>' : '');
-    }
-
-    // ===== 关键修复：在用户点击的同步阶段唤醒 AudioContext =====
     function unlockAudioContextSync() {
         const Ctx = window.AudioContext || window.webkitAudioContext;
-        if (!Ctx) throw new Error('浏览器不支持 AudioContext');
-
-        if (!audioContext || audioContext.state === 'closed') {
-            audioContext = new Ctx();
-        }
-
-        // Safari 必须在点击瞬间 resume，不能等 getUserMedia 之后
-        if (audioContext.state === 'suspended') {
-            audioContext.resume();
-        }
-
-        // 播放静音 buffer，帮助 Mac Safari 真正启动
+        if (!audioContext || audioContext.state === 'closed') audioContext = new Ctx();
+        if (audioContext.state === 'suspended') audioContext.resume();
         try {
-            const buffer = audioContext.createBuffer(1, 1, 22050);
-            const source = audioContext.createBufferSource();
-            source.buffer = buffer;
-            source.connect(audioContext.destination);
-            source.start(0);
-        } catch (e) {
-            console.warn('silent buffer failed', e);
-        }
-
-        return audioContext;
+            const buf = audioContext.createBuffer(1, 1, 22050);
+            const src = audioContext.createBufferSource();
+            src.buffer = buf;
+            src.connect(audioContext.destination);
+            src.start(0);
+        } catch (e) {}
     }
 
-    async function waitAudioRunning(timeoutMs) {
-        const start = Date.now();
+    async function waitAudioRunning(ms) {
+        const t0 = Date.now();
         while (audioContext.state !== 'running') {
-            if (Date.now() - start > timeoutMs) {
-                throw new Error('音频引擎启动超时，请换 Chrome 或刷新页面');
-            }
-            if (audioContext.state === 'suspended') {
-                await audioContext.resume();
-            }
+            if (Date.now() - t0 > ms) throw new Error('音频引擎启动超时，请换 Chrome');
+            if (audioContext.state === 'suspended') await audioContext.resume();
             await new Promise(r => setTimeout(r, 50));
         }
     }
 
-    async function hmacSha256Base64(secret, message) {
+    async function hmacSha256Base64(secret, msg) {
         const enc = new TextEncoder();
         const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-        const sig = await crypto.subtle.sign('HMAC', key, enc.encode(message));
+        const sig = await crypto.subtle.sign('HMAC', key, enc.encode(msg));
         return btoa(String.fromCharCode(...new Uint8Array(sig)));
     }
 
     async function getWebSocketUrl(apiKey, apiSecret) {
         const host = 'iat-api.xfyun.cn';
         const date = new Date().toUTCString();
-        const signatureOrigin = `host: ${host}\ndate: ${date}\nGET /v2/iat HTTP/1.1`;
-        const signature = await hmacSha256Base64(apiSecret, signatureOrigin);
-        const authorization = btoa(`api_key="${apiKey}", algorithm="hmac-sha256", headers="host date request-line", signature="${signature}"`);
-        return `wss://${host}/v2/iat?authorization=${encodeURIComponent(authorization)}&date=${encodeURIComponent(date)}&host=${host}`;
+        const origin = `host: ${host}\ndate: ${date}\nGET /v2/iat HTTP/1.1`;
+        const sig = await hmacSha256Base64(apiSecret, origin);
+        const auth = btoa(`api_key="${apiKey}", algorithm="hmac-sha256", headers="host date request-line", signature="${sig}"`);
+        return `wss://${host}/v2/iat?authorization=${encodeURIComponent(auth)}&date=${encodeURIComponent(date)}&host=${host}`;
     }
 
-    function resampleTo16k(input, sampleRate) {
-        if (sampleRate === 16000) return input;
-        const ratio = sampleRate / 16000;
+    function resampleTo16k(input, rate) {
+        if (rate === 16000) return input;
+        const ratio = rate / 16000;
         const len = Math.round(input.length / ratio);
         const out = new Float32Array(len);
         for (let i = 0; i < len; i++) {
-            const pos = i * ratio;
-            const idx = Math.floor(pos);
-            const frac = pos - idx;
-            const a = input[idx] || 0;
-            const b = input[idx + 1] || a;
-            out[i] = a + (b - a) * frac;
+            const pos = i * ratio, idx = Math.floor(pos), f = pos - idx;
+            const a = input[idx] || 0, b = input[idx + 1] || a;
+            out[i] = a + (b - a) * f;
         }
         return out;
     }
 
-    function floatTo16BitPCM(float32) {
-        const buf = new ArrayBuffer(float32.length * 2);
-        const view = new DataView(buf);
-        for (let i = 0; i < float32.length; i++) {
-            const s = Math.max(-1, Math.min(1, float32[i]));
-            view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    function floatTo16BitPCM(f32) {
+        const buf = new ArrayBuffer(f32.length * 2);
+        const v = new DataView(buf);
+        for (let i = 0; i < f32.length; i++) {
+            const s = Math.max(-1, Math.min(1, f32[i]));
+            v.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
         }
         return buf;
     }
 
     function toBase64(buffer) {
-        const bytes = new Uint8Array(buffer);
-        let bin = '';
-        for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-        return btoa(bin);
+        const b = new Uint8Array(buffer);
+        let s = '';
+        for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
+        return btoa(s);
     }
 
     function mergeBuffers(list) {
         const total = list.reduce((n, b) => n + b.byteLength, 0);
         const out = new Uint8Array(total);
-        let offset = 0;
-        list.forEach(b => { out.set(new Uint8Array(b), offset); offset += b.byteLength; });
+        let off = 0;
+        list.forEach(b => { out.set(new Uint8Array(b), off); off += b.byteLength; });
         return out.buffer;
     }
 
     function executeCommand(text) {
         const cmd = text.replace(/\s/g, '');
-        if (cmd.includes('播放视频')) video.play().catch(() => result.textContent = '请先手动点一次视频播放');
-        else if (cmd.includes('暂停视频')) { video.pause(); result.textContent = '已暂停视频'; }
-        else if (cmd.includes('播放音乐')) audio.play().catch(() => result.textContent = '请先手动点一次音乐播放');
-        else if (cmd.includes('暂停音乐')) { audio.pause(); result.textContent = '已暂停音乐'; }
+        if (cmd.includes('播放视频')) video.play().catch(() => {});
+        else if (cmd.includes('暂停视频')) { video.pause(); result.textContent = '✅ 已暂停视频'; }
+        else if (cmd.includes('播放音乐')) audio.play().catch(() => {});
+        else if (cmd.includes('暂停音乐')) { audio.pause(); result.textContent = '✅ 已暂停音乐'; }
     }
 
     function parseResult(data) {
         const json = JSON.parse(data);
-        if (json.code !== 0) { result.textContent = '识别错误：' + json.message; return; }
+        if (json.code !== 0) {
+            console.warn('讯飞错误', json);
+            return;
+        }
         if (!json.data || !json.data.result) return;
+
         let text = '';
         (json.data.result.ws || []).forEach(w => (w.cw || []).forEach(c => text += c.w));
         if (!text) return;
+
         if (json.data.result.pgs === 'rpl') {
             fullText = json.data.result.rg ? fullText.substring(0, json.data.result.rg[0]) + text : text;
-        } else fullText += text;
+        } else {
+            fullText += text;
+        }
         result.textContent = '你说：' + fullText;
-        if (json.data.status === 2) { executeCommand(fullText); fullText = ''; }
+
+        // 一句话识别完毕，执行命令，然后等 ws 断开后自动重连
+        if (json.data.status === 2) {
+            executeCommand(fullText);
+            fullText = '';
+        }
     }
 
     function sendFrame(base64, status) {
         if (!ws || ws.readyState !== WebSocket.OPEN) return;
-        const frame = { data: { status, format: 'audio/L16;rate=16000', encoding: 'raw', audio: base64 } };
+        const frame = {
+            data: { status, format: 'audio/L16;rate=16000', encoding: 'raw', audio: base64 }
+        };
         if (status === 0) {
             frame.common = { app_id: getConfig().appId };
-            frame.business = { language: 'zh_cn', domain: 'iat', accent: 'mandarin', vad_eos: 3000, dwa: 'wpgs' };
+            frame.business = {
+                language: 'zh_cn',
+                domain: 'iat',
+                accent: 'mandarin',
+                vad_eos: 8000,   // 8秒静音才结束一句，减少频繁断开
+                dwa: 'wpgs'
+            };
         }
         ws.send(JSON.stringify(frame));
-    }
-
-    function cleanupAudio() {
-        clearInterval(sendInterval);
-        sendInterval = null;
-        if (processor) { processor.onaudioprocess = null; processor.disconnect(); processor = null; }
-        if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
-        pcmBuffer = [];
-        frameStatus = 0;
-    }
-
-    function cleanupWS() {
-        if (!ws) return;
-        ws.onopen = ws.onmessage = ws.onerror = ws.onclose = null;
-        try { if (ws.readyState <= 1) ws.close(); } catch (e) {}
-        ws = null;
-    }
-
-    function stopListening(showMsg) {
-        manualStop = true;
-        isListening = false;
-        fullText = '';
-        cleanupAudio();
-        cleanupWS();
-        voiceBtn.textContent = '开启语音监听';
-        voiceBtn.classList.remove('active');
-        voiceBtn.disabled = false;
-        isBusy = false;
-        if (showMsg) { result.textContent = '已关闭监听'; setStatus('已停止'); }
     }
 
     function startCapture() {
@@ -288,12 +237,110 @@
         gain.gain.value = 0;
         processor.onaudioprocess = e => {
             if (!isListening) return;
-            const pcm = resampleTo16k(e.inputBuffer.getChannelData(0), audioContext.sampleRate);
-            pcmBuffer.push(floatTo16BitPCM(pcm));
+            pcmBuffer.push(floatTo16BitPCM(resampleTo16k(e.inputBuffer.getChannelData(0), audioContext.sampleRate)));
         };
         source.connect(processor);
         processor.connect(gain);
         gain.connect(audioContext.destination);
+    }
+
+    function startSendLoop() {
+        if (sendInterval) return;
+        sendInterval = setInterval(() => {
+            if (!isListening || !ws || ws.readyState !== WebSocket.OPEN) return;
+            const merged = pcmBuffer.length ? mergeBuffers(pcmBuffer) : new ArrayBuffer(0);
+            pcmBuffer = [];
+            sendFrame(merged.byteLength ? toBase64(merged) : '', frameStatus);
+            if (frameStatus === 0) frameStatus = 1;
+        }, 200);
+    }
+
+    function closeWSOnly() {
+        if (!ws) return;
+        ws.onopen = ws.onmessage = ws.onerror = ws.onclose = null;
+        try { if (ws.readyState <= 1) ws.close(); } catch (e) {}
+        ws = null;
+    }
+
+    // ★ 核心：断开后自动重连，麦克风不中断
+    function scheduleReconnect(reason) {
+        if (!isListening || manualStop) return;
+        clearTimeout(reconnectTimer);
+        const delay = Math.min(500 + reconnectCount * 200, 2000);
+        setStatus(`${reason}，${delay/1000}秒后自动重连...（第${reconnectCount+1}次）`);
+        reconnectTimer = setTimeout(() => connectWebSocket(), delay);
+    }
+
+    async function connectWebSocket() {
+        if (!isListening || manualStop || isConnecting) return;
+
+        isConnecting = true;
+        closeWSOnly();
+        frameStatus = 0;
+        fullText = '';
+
+        try {
+            const cfg = getConfig();
+            ws = new WebSocket(await getWebSocketUrl(cfg.apiKey, cfg.apiSecret));
+
+            ws.onopen = () => {
+                isConnecting = false;
+                reconnectCount = 0;
+                setStatus('实时监听中，请随时说话...');
+                startSendLoop();
+            };
+
+            ws.onmessage = e => { try { parseResult(e.data); } catch (err) { console.error(err); } };
+
+            ws.onerror = () => {
+                isConnecting = false;
+                reconnectCount++;
+                scheduleReconnect('连接异常');
+            };
+
+            ws.onclose = () => {
+                isConnecting = false;
+                if (isListening && !manualStop) {
+                    reconnectCount++;
+                    scheduleReconnect('会话结束');
+                }
+            };
+        } catch (err) {
+            isConnecting = false;
+            reconnectCount++;
+            scheduleReconnect('连接失败');
+        }
+    }
+
+    function stopListening(showMsg) {
+        manualStop = true;
+        isListening = false;
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+
+        clearInterval(sendInterval);
+        sendInterval = null;
+
+        closeWSOnly();
+
+        if (processor) { processor.onaudioprocess = null; processor.disconnect(); processor = null; }
+        if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
+
+        pcmBuffer = [];
+        frameStatus = 0;
+        fullText = '';
+        reconnectCount = 0;
+        isConnecting = false;
+        isBusy = false;
+
+        voiceBtn.textContent = '开启语音监听';
+        voiceBtn.classList.remove('active');
+        voiceBtn.disabled = false;
+
+        if (showMsg) {
+            result.textContent = '已关闭监听';
+            setStatus('已停止');
+        }
     }
 
     async function startListening() {
@@ -307,55 +354,26 @@
         isBusy = true;
         voiceBtn.disabled = true;
         manualStop = false;
+        isListening = true;
 
         try {
-            // 步骤1：等待音频引擎（已在点击时同步唤醒）
             setStatus('启动音频引擎...');
             await waitAudioRunning(5000);
-            setStatus('音频引擎已就绪：' + audioContext.state + ' / ' + audioContext.sampleRate + 'Hz');
 
-            // 步骤2：再申请麦克风
-            setStatus('申请麦克风中...');
+            setStatus('申请麦克风...');
             mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-            // 步骤3：连接讯飞
-            setStatus('连接讯飞中...');
-            cleanupWS();
-            ws = new WebSocket(await getWebSocketUrl(cfg.apiKey, cfg.apiSecret));
-            pcmBuffer = [];
-            frameStatus = 0;
-            fullText = '';
+            startCapture();
+            voiceBtn.textContent = '关闭语音监听';
+            voiceBtn.classList.add('active');
+            voiceBtn.disabled = false;
+            isBusy = false;
 
-            ws.onopen = () => {
-                setStatus('监听中，请说话...');
-                result.textContent = '正在监听，请说：播放视频 / 暂停音乐';
-                startCapture();
-                sendInterval = setInterval(() => {
-                    if (!isListening || !ws || ws.readyState !== WebSocket.OPEN) return;
-                    const merged = pcmBuffer.length ? mergeBuffers(pcmBuffer) : new ArrayBuffer(0);
-                    pcmBuffer = [];
-                    sendFrame(merged.byteLength ? toBase64(merged) : '', frameStatus);
-                    if (frameStatus === 0) frameStatus = 1;
-                }, 200);
-                isListening = true;
-                voiceBtn.textContent = '关闭语音监听';
-                voiceBtn.classList.add('active');
-                voiceBtn.disabled = false;
-                isBusy = false;
-            };
-
-            ws.onmessage = e => { try { parseResult(e.data); } catch (err) { console.error(err); } };
-            ws.onerror = () => { result.textContent = '连接讯飞失败'; stopListening(false); };
-            ws.onclose = () => {
-                if (isListening && !manualStop) {
-                    result.textContent = '连接断开，请重新开启';
-                    stopListening(false);
-                }
-            };
+            // 首次连接 + 之后全靠自动重连
+            await connectWebSocket();
 
         } catch (err) {
-            result.textContent = err.message || ('启动失败：' + err.name);
-            setStatus('出错，已重置');
+            result.textContent = err.message || '启动失败';
             stopListening(false);
         }
     }
@@ -365,21 +383,15 @@
             stopListening(true);
             return;
         }
-
         stopListening(false);
-
         try {
-            // ★ 最关键：点击瞬间就唤醒 AudioContext，不要放在 await 后面
             unlockAudioContextSync();
         } catch (err) {
             result.textContent = err.message;
             return;
         }
-
         await startListening();
     };
-
-    detectEnvironment();
 })();
 </script>
 </body>
