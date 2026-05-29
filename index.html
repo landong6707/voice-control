@@ -2,7 +2,11 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="format-detection" content="telephone=no">
     <title>开幕式语音控制台</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -12,11 +16,17 @@
             background: #fff;
             color: #1a1a1a;
             min-height: 100vh;
+            min-height: 100dvh;
             display: flex;
             align-items: center;
             justify-content: center;
             overflow: hidden;
         }
+
+        body.video-mode { overflow: hidden; background: #000; }
+        body.video-mode .center-wrap,
+        body.video-mode .config-toggle,
+        body.video-mode .config-panel { visibility: hidden; pointer-events: none; }
 
         /* 整体居中：GIF 在上，输入框在下 */
         .center-wrap {
@@ -137,9 +147,32 @@
             font-size: 13px;
         }
 
-        /* 开幕式全屏舞台 */
-        .stage { display: none; position: fixed; inset: 0; z-index: 1000; background: #000; }
+        /* 开幕式全屏舞台 — 播放时整屏只有视频 */
+        .stage {
+            display: none;
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            height: 100dvh;
+            z-index: 1000;
+            background: #000;
+        }
+
         .stage.active { display: block; }
+
+        .stage.video-only .particles,
+        .stage.video-only .light-rays,
+        .stage.video-only .curtain-left,
+        .stage.video-only .curtain-right,
+        .stage.video-only .banner,
+        .stage.video-only .loading-tip { display: none !important; }
+
+        .stage.video-only .media-wrap {
+            opacity: 1 !important;
+            transform: none !important;
+            animation: none !important;
+        }
 
         .particles { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
         .particle { position: absolute; border-radius: 50%; animation: particleFly linear forwards; }
@@ -211,7 +244,7 @@
             display: none;
             width: 100%;
             height: 100%;
-            object-fit: contain;
+            object-fit: cover;
             background: #000;
         }
 
@@ -226,17 +259,38 @@
 
         .stage.loading .loading-tip { display: block; }
 
-        .close-btn {
-            position: absolute; top: 20px; right: 20px; z-index: 30;
-            width: 44px; height: 44px;
-            border: 2px solid rgba(255, 255, 255, .3);
-            border-radius: 50%;
-            background: rgba(0, 0, 0, .5);
-            color: #fff; font-size: 20px; cursor: pointer;
-            display: none; align-items: center; justify-content: center;
+        /* 微信等内置浏览器提示 */
+        .browser-tip {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            background: rgba(0, 0, 0, .88);
+            color: #fff;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 32px 24px;
+            text-align: center;
+            line-height: 1.8;
         }
 
-        .stage.playing .close-btn, .stage.loaded .close-btn { display: flex; }
+        .browser-tip.show { display: flex; }
+
+        .browser-tip p { font-size: 16px; max-width: 320px; }
+        .browser-tip strong { color: #ffd700; font-size: 18px; }
+        .browser-tip .arrow {
+            position: absolute;
+            top: 12px;
+            right: 24px;
+            font-size: 36px;
+            animation: tipBounce 1s ease-in-out infinite;
+        }
+
+        @keyframes tipBounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-6px); }
+        }
     </style>
 </head>
 <body>
@@ -246,6 +300,11 @@
     <label>APPID</label><input id="appId" value="bab98dfc">
     <label>APIKey</label><input id="apiKey" value="e3a1bd8e628d45ac6214efd43cb1a32a">
     <label>APISecret</label><input id="apiSecret" value="NjJlNTlhMDNiY2JhNjE2ZWYyYTYzN2M4">
+</div>
+
+<div class="browser-tip" id="browserTip">
+    <div class="arrow">↗</div>
+    <p><strong>请用系统浏览器打开</strong><br>微信/QQ 内置浏览器可能无法正常访问<br>点击右上角 <strong>···</strong> → 选择「在浏览器打开」<br>推荐使用 Chrome 或 Safari</p>
 </div>
 
 <div class="center-wrap">
@@ -271,9 +330,8 @@
     </div>
     <div class="loading-tip" id="loadingTip">正在加载视频...</div>
     <div class="media-wrap">
-        <video id="stageVideo" playsinline webkit-playsinline preload="auto"></video>
+        <video id="stageVideo" playsinline webkit-playsinline x5-playsinline preload="auto"></video>
     </div>
-    <button class="close-btn" id="closeBtn">✕</button>
 </div>
 
 <script>
@@ -281,10 +339,16 @@
     'use strict';
 
     const VIDEO_POOL = [
-        { url: 'assets/videos/opening.mp4', title: '开幕式视频' },
-        { url: 'https://www.w3school.com.cn/example/html5/mov_bbb.mp4', title: 'Big Buck Bunny' },
-        { url: 'https://www.w3school.com.cn/i/movie.mp4', title: 'W3School 示例' },
+        { url: 'https://www.w3school.com.cn/example/html5/mov_bbb.mp4', title: '开幕式视频' },
+        { url: 'https://www.w3school.com.cn/i/movie.mp4', title: '备用视频' },
+        { url: 'assets/videos/opening.mp4', title: '本地视频' },
     ];
+
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const isWeChat = /MicroMessenger/i.test(navigator.userAgent);
+    const isQQ = /\bQQ\//i.test(navigator.userAgent);
+    const isInAppBrowser = isWeChat || isQQ;
 
     const $ = id => document.getElementById(id);
     const micBtn = $('micBtn');
@@ -295,14 +359,15 @@
     const bannerTitle = $('bannerTitle');
     const bannerSub = $('bannerSub');
     const particles = $('particles');
-    const closeBtn = $('closeBtn');
     const loadingTip = $('loadingTip');
+    const browserTip = $('browserTip');
 
     let isListening = false, isBusy = false, manualStop = false;
     let ws = null, audioContext = null, processor = null, mediaStream = null;
     let sendInterval = null, reconnectTimer = null, isConnecting = false;
     let pcmBuffer = [], frameStatus = 0, fullText = '', reconnectCount = 0;
     let ceremonyBusy = false, lastCmdTime = 0, mediaUnlocked = false;
+    let preloadedVideoItem = null;
 
     $('configToggle').onclick = () => $('configPanel').classList.toggle('show');
 
@@ -325,16 +390,52 @@
     async function unlockMediaPlayback() {
         if (mediaUnlocked) return;
         try {
+            const url = (VIDEO_POOL.find(v => v.url.startsWith('http')) || VIDEO_POOL[0]).url;
             stageVideo.muted = true;
-            stageVideo.src = VIDEO_POOL.find(v => v.url.startsWith('http'))?.url || VIDEO_POOL[1].url;
+            if (!stageVideo.src) stageVideo.src = url;
             stageVideo.load();
             await stageVideo.play();
             stageVideo.pause();
-            stageVideo.removeAttribute('src');
-            stageVideo.load();
+            stageVideo.currentTime = 0;
             stageVideo.muted = false;
             mediaUnlocked = true;
         } catch (e) { console.warn('unlock media', e); }
+    }
+
+    /* 开启麦克风后立刻预加载到 stageVideo，说「发布」时直接播放 */
+    function startVideoPreload() {
+        if (ceremonyBusy || preloadedVideoItem) return;
+        const item = VIDEO_POOL.find(v => v.url.startsWith('http')) || VIDEO_POOL[0];
+        const onReady = () => {
+            preloadedVideoItem = item;
+            stageVideo.removeEventListener('canplay', onReady);
+            stageVideo.removeEventListener('error', onErr);
+        };
+        const onErr = () => {
+            stageVideo.removeEventListener('canplay', onReady);
+            stageVideo.removeEventListener('error', onErr);
+        };
+        stageVideo.addEventListener('canplay', onReady);
+        stageVideo.addEventListener('error', onErr);
+        stageVideo.src = item.url;
+        stageVideo.load();
+        if (stageVideo.readyState >= 3) onReady();
+    }
+
+    function waitVideoReady(video, timeoutMs) {
+        return new Promise((resolve, reject) => {
+            if (video.readyState >= 3) { resolve(); return; }
+            const timer = setTimeout(() => { cleanup(); reject(new Error('加载超时')); }, timeoutMs || 5000);
+            const onCanPlay = () => { cleanup(); resolve(); };
+            const onError = () => { cleanup(); reject(new Error('视频加载失败')); };
+            const cleanup = () => {
+                clearTimeout(timer);
+                video.removeEventListener('canplay', onCanPlay);
+                video.removeEventListener('error', onError);
+            };
+            video.addEventListener('canplay', onCanPlay, { once: true });
+            video.addEventListener('error', onError, { once: true });
+        });
     }
 
     function spawnParticles() {
@@ -370,12 +471,15 @@
     }
 
     async function loadVideoWithFallback() {
-        const pool = [...VIDEO_POOL].sort(() => Math.random() - 0.5);
         let lastErr;
-        for (const item of pool) {
+        for (const item of VIDEO_POOL) {
             try {
+                if (preloadedVideoItem && item.url === preloadedVideoItem.url && stageVideo.readyState >= 3) {
+                    return item;
+                }
                 bannerSub.textContent = '正在加载：' + item.title;
-                await preloadVideo(item.url, 8000);
+                await preloadVideo(item.url, 6000);
+                preloadedVideoItem = item;
                 return item;
             } catch (e) {
                 lastErr = e;
@@ -396,25 +500,57 @@
         }
     }
 
-    function requestFullscreen(el) {
-        const fn = el.requestFullscreen || el.webkitRequestFullscreen || el.webkitEnterFullscreen;
-        if (fn) fn.call(el).catch(() => {});
-        else if (stageVideo.webkitEnterFullscreen) stageVideo.webkitEnterFullscreen();
+    async function enterVideoFullscreen() {
+        const v = stageVideo;
+        document.body.classList.add('video-mode');
+        stage.classList.add('video-only');
+
+        /* iOS：原生全屏播放器，可隐藏 Safari 地址栏 */
+        if (isIOS && typeof v.webkitEnterFullscreen === 'function') {
+            v.removeAttribute('playsinline');
+            v.playsInline = false;
+            v.webkitEnterFullscreen();
+            return;
+        }
+
+        /* Android / 桌面：浏览器全屏 API，隐藏导航栏 */
+        const targets = [document.documentElement, stage, v];
+        for (const el of targets) {
+            const fn = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+            if (!fn) continue;
+            try {
+                await fn.call(el);
+                if (screen.orientation && screen.orientation.lock) {
+                    screen.orientation.lock('landscape').catch(() => {});
+                }
+                return;
+            } catch (e) { /* 尝试下一个 */ }
+        }
     }
 
     function exitFullscreen() {
-        const fn = document.exitFullscreen || document.webkitExitFullscreen;
-        if (fn && (document.fullscreenElement || document.webkitFullscreenElement)) {
+        if (screen.orientation && screen.orientation.unlock) {
+            screen.orientation.unlock();
+        }
+        const fn = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
+        if (fn && (document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement)) {
             fn.call(document).catch(() => {});
         }
+        document.body.classList.remove('video-mode');
+        stage.classList.remove('video-only');
+        stageVideo.setAttribute('playsinline', '');
+        stageVideo.setAttribute('webkit-playsinline', '');
+        stageVideo.playsInline = true;
     }
 
     function resetStageDOM() {
         stageVideo.pause();
-        stageVideo.removeAttribute('src');
-        stageVideo.load();
+        stageVideo.onended = null;
         stage.className = 'stage';
         stageVideo.classList.remove('active');
+        document.body.classList.remove('video-mode');
+        /* 保留 src 供下次秒开，仅重置播放位置 */
+        if (stageVideo.src) stageVideo.currentTime = 0;
     }
 
     function closeCeremony(exitFs) {
@@ -424,51 +560,63 @@
         showMascot();
     }
 
-    closeBtn.onclick = () => closeCeremony(true);
+    stageVideo.addEventListener('webkitendfullscreen', () => closeCeremony(false));
 
     async function openCeremony() {
         if (ceremonyBusy) return;
         ceremonyBusy = true;
         hideMascot();
-        resetStageDOM();
 
-        stage.className = 'stage active entering loading';
-        spawnParticles();
+        /* 第一步：立刻黑屏全屏，零等待 */
+        stage.className = 'stage active loading video-only';
+        document.body.classList.add('video-mode');
         loadingTip.style.display = 'block';
-        bannerTitle.textContent = '开幕式';
+        loadingTip.textContent = '正在打开...';
+        stageVideo.classList.add('active');
+        enterVideoFullscreen().catch(() => {});
 
         try {
-            stageVideo.classList.add('active');
-            const item = await loadVideoWithFallback();
-            bannerSub.textContent = item.title;
-            loadingTip.style.display = 'none';
+            let item = preloadedVideoItem;
+            if (item && stageVideo.readyState >= 3 && stageVideo.src) {
+                /* 预加载已完成，直接播 */
+                loadingTip.style.display = 'none';
+            } else {
+                item = await loadVideoWithFallback();
+                loadingTip.style.display = 'none';
+            }
+
             stage.classList.remove('loading');
-            stage.classList.add('playing', 'loaded');
+            stage.classList.add('playing', 'loaded', 'video-only');
 
             await safePlayVideo();
-            requestFullscreen(stageVideo);
+            await enterVideoFullscreen();
             stageVideo.onended = () => closeCeremony(true);
         } catch (err) {
             console.error(err);
             loadingTip.textContent = '加载失败：' + (err.message || '请检查网络');
-            bannerSub.textContent = '加载失败，3秒后关闭';
             ceremonyBusy = false;
             setTimeout(() => closeCeremony(true), 3000);
         }
     }
 
-    /* 监听到「发布」立即全屏播放视频 */
+    function hasPublishCommand(text) {
+        if (!text) return false;
+        const t = text.replace(/[\s，。！？、,.!?\-]/g, '');
+        return t.includes('发布');
+    }
+
+    /* 识别到「发布」立即触发，不等整句说完、不等静音结束 */
+    function triggerCeremony() {
+        if (ceremonyBusy) return;
+        lastCmdTime = Date.now();
+        fullText = '';
+        openCeremony();
+    }
+
     function tryExecuteCommand(text) {
         if (!text || ceremonyBusy) return;
-        const cmd = text.replace(/\s/g, '');
-        const now = Date.now();
-        if (now - lastCmdTime < 2000) return;
-
-        if (cmd.includes('发布')) {
-            lastCmdTime = now;
-            fullText = '';
-            openCeremony();
-        }
+        if (!hasPublishCommand(text)) return;
+        triggerCeremony();
     }
 
     function formatMicError(err) {
@@ -579,13 +727,16 @@
         (json.data.result.ws || []).forEach(w => (w.cw || []).forEach(c => text += c.w));
         if (!text) return;
 
+        /* 先合并文本再检测，确保「发」「布」分片到达时也能立刻触发 */
         if (json.data.result.pgs === 'rpl') {
             fullText = json.data.result.rg ? fullText.substring(0, json.data.result.rg[0]) + text : text;
         } else {
             fullText += text;
         }
 
+        tryExecuteCommand(text);
         tryExecuteCommand(fullText);
+
         if (json.data.status === 2) fullText = '';
     }
 
@@ -594,7 +745,12 @@
         const frame = { data: { status, format: 'audio/L16;rate=16000', encoding: 'raw', audio: base64 } };
         if (status === 0) {
             frame.common = { app_id: getConfig().appId };
-            frame.business = { language: 'zh_cn', domain: 'iat', accent: 'mandarin', vad_eos: 1500, dwa: 'wpgs' };
+            frame.business = {
+                language: 'zh_cn', domain: 'iat', accent: 'mandarin',
+                vad_eos: 500,
+                dwa: 'wpgs',
+                dhw: '发布'
+            };
         }
         ws.send(JSON.stringify(frame));
     }
@@ -653,6 +809,7 @@
                 reconnectCount = 0;
                 setVoiceUI(true);
                 startSendLoop();
+                startVideoPreload();
             };
             ws.onmessage = e => { try { parseResult(e.data); } catch (err) {} };
             ws.onerror = () => { isConnecting = false; reconnectCount++; scheduleReconnect('异常'); };
@@ -704,6 +861,7 @@
             await ensureAudioContextReady();
             startCapture();
             isBusy = false;
+            startVideoPreload();
             unlockMediaPlayback().catch(() => {});
             await connectWebSocket();
         } catch (err) {
@@ -737,9 +895,13 @@
 
     if (!window.isSecureContext) {
         placeholder.textContent = '请用 https 或 localhost 打开此页面';
+    } else if (isInAppBrowser) {
+        browserTip.classList.add('show');
+        placeholder.textContent = '请用系统浏览器打开';
+    } else if (!window.crypto || !window.crypto.subtle) {
+        placeholder.textContent = '请用 Chrome 或 Safari 打开';
     }
 })();
 </script>
 </body>
 </html>
-
