@@ -2,97 +2,472 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>语音控制音视频</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>开幕式语音控制台</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: system-ui, -apple-system, sans-serif; padding: 16px; background: #f8fafc; }
-        .container { max-width: 900px; margin: 0 auto; }
-        .card { margin: 16px 0; border: 1px solid #e2e8f0; padding: 16px; border-radius: 12px; background: #fff; }
-        h1 { font-size: 22px; margin-bottom: 8px; }
-        h3 { font-size: 16px; margin-bottom: 10px; }
-        label { display: block; font-size: 13px; color: #64748b; margin-top: 8px; }
-        input { width: 100%; padding: 10px; margin-top: 4px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; }
-        video, audio { width: 100%; margin-top: 10px; display: block; border-radius: 8px; }
-        .voice-btn {
-            padding: 14px 24px; font-size: 16px; background: #2563eb; color: #fff;
-            border: none; border-radius: 8px; cursor: pointer; width: 100%; max-width: 320px;
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+            background: #fff;
+            color: #1a1a1a;
+            min-height: 100vh;
+            overflow-x: hidden;
         }
-        .voice-btn.active { background: #dc2626; }
-        .voice-btn:disabled { background: #94a3b8; cursor: not-allowed; }
-        .tips { color: #64748b; font-size: 14px; line-height: 1.6; margin: 8px 0; }
-        .result { color: #2563eb; font-weight: 600; font-size: 16px; margin: 10px 0; min-height: 22px; }
-        .status { color: #64748b; font-size: 13px; line-height: 1.5; }
-        .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #22c55e; margin-right: 6px; animation: pulse 1.5s infinite; }
-        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+        .main {
+            max-width: 820px;
+            margin: 0 auto;
+            padding: 80px 24px 140px;
+            text-align: center;
+        }
+
+        .greeting {
+            font-size: clamp(28px, 5vw, 42px);
+            font-weight: 600;
+            letter-spacing: -0.5px;
+            margin-bottom: 36px;
+            color: #111;
+        }
+
+        .chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            justify-content: center;
+            margin-bottom: 16px;
+        }
+
+        .chip {
+            padding: 10px 18px;
+            background: #f5f5f5;
+            border: 1px solid #eee;
+            border-radius: 20px;
+            font-size: 14px;
+            color: #444;
+            cursor: default;
+            transition: background .2s;
+        }
+
+        .chip:hover { background: #eee; }
+
+        .hint {
+            margin-top: 40px;
+            font-size: 14px;
+            color: #999;
+            line-height: 1.8;
+        }
+
+        .hint strong { color: #666; }
+
+        .bottom-bar {
+            position: fixed;
+            bottom: 0; left: 0; right: 0;
+            padding: 16px 20px 28px;
+            background: linear-gradient(to top, #fff 70%, transparent);
+            display: flex;
+            justify-content: center;
+            z-index: 100;
+        }
+
+        .input-box {
+            width: 100%;
+            max-width: 720px;
+            background: #f7f7f8;
+            border: 1px solid #e8e8e8;
+            border-radius: 24px;
+            padding: 14px 18px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            box-shadow: 0 2px 12px rgba(0,0,0,.04);
+        }
+
+        .input-placeholder {
+            flex: 1;
+            text-align: left;
+            font-size: 15px;
+            color: #aaa;
+            user-select: none;
+        }
+
+        .voice-status {
+            font-size: 13px;
+            color: #2563eb;
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .mic-btn {
+            width: 44px; height: 44px;
+            border: none;
+            border-radius: 50%;
+            background: #e8e8e8;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all .3s cubic-bezier(.4,0,.2,1);
+            flex-shrink: 0;
+        }
+
+        .mic-btn svg { width: 22px; height: 22px; fill: #888; transition: fill .3s; }
+
+        .mic-btn.active {
+            background: linear-gradient(135deg, #ff4d4f, #ff7875);
+            box-shadow: 0 0 0 4px rgba(255,77,79,.25), 0 4px 20px rgba(255,77,79,.4);
+            animation: micPulse 1.5s ease-in-out infinite;
+        }
+
+        .mic-btn.active svg { fill: #fff; }
+
+        @keyframes micPulse {
+            0%, 100% { box-shadow: 0 0 0 4px rgba(255,77,79,.25), 0 4px 20px rgba(255,77,79,.4); }
+            50% { box-shadow: 0 0 0 8px rgba(255,77,79,.15), 0 4px 28px rgba(255,77,79,.5); }
+        }
+
+        .config-toggle {
+            position: fixed;
+            top: 12px; right: 12px;
+            font-size: 12px;
+            color: #ccc;
+            background: none;
+            border: none;
+            cursor: pointer;
+            z-index: 200;
+        }
+
+        .config-panel {
+            display: none;
+            position: fixed;
+            top: 40px; right: 12px;
+            background: #fff;
+            border: 1px solid #eee;
+            border-radius: 12px;
+            padding: 16px;
+            width: 280px;
+            z-index: 199;
+            box-shadow: 0 8px 32px rgba(0,0,0,.1);
+        }
+
+        .config-panel.show { display: block; }
+        .config-panel label { font-size: 12px; color: #888; display: block; margin-top: 8px; }
+        .config-panel input {
+            width: 100%; padding: 8px; margin-top: 4px;
+            border: 1px solid #ddd; border-radius: 6px; font-size: 13px;
+        }
+
+        .stage {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            background: #000;
+        }
+
+        .stage.active { display: block; }
+
+        .particles {
+            position: absolute;
+            inset: 0;
+            overflow: hidden;
+            pointer-events: none;
+        }
+
+        .particle {
+            position: absolute;
+            border-radius: 50%;
+            animation: particleFly linear forwards;
+        }
+
+        @keyframes particleFly {
+            0% { transform: translate(0, 0) scale(1); opacity: 1; }
+            100% { transform: translate(var(--tx), var(--ty)) scale(0); opacity: 0; }
+        }
+
+        .light-rays {
+            position: absolute;
+            inset: 0;
+            background: conic-gradient(from 0deg, transparent, rgba(255,200,50,.15), transparent, rgba(255,80,50,.12), transparent);
+            animation: raysSpin 4s linear infinite;
+            opacity: 0;
+        }
+
+        .stage.entering .light-rays { animation: raysSpin 4s linear infinite, raysIn 1s ease forwards; }
+
+        @keyframes raysSpin { to { transform: rotate(360deg); } }
+        @keyframes raysIn { from { opacity: 0; } to { opacity: 1; } }
+
+        .curtain-left, .curtain-right {
+            position: absolute;
+            top: 0; bottom: 0;
+            width: 50%;
+            background: linear-gradient(135deg, #8b0000 0%, #dc143c 50%, #8b0000 100%);
+            z-index: 10;
+            transition: transform 1.2s cubic-bezier(.77,0,.18,1);
+        }
+
+        .curtain-left { left: 0; transform: translateX(0); }
+        .curtain-right { right: 0; transform: translateX(0); }
+
+        .stage.playing .curtain-left { transform: translateX(-100%); }
+        .stage.playing .curtain-right { transform: translateX(100%); }
+
+        .curtain-left::after, .curtain-right::after {
+            content: '';
+            position: absolute;
+            top: 0; bottom: 0;
+            width: 60px;
+            background: linear-gradient(90deg, rgba(255,215,0,.3), transparent);
+        }
+
+        .curtain-left::after { right: 0; }
+        .curtain-right::after { left: 0; transform: scaleX(-1); }
+
+        .banner {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%) scale(0);
+            z-index: 20;
+            text-align: center;
+            pointer-events: none;
+        }
+
+        .stage.entering .banner {
+            animation: bannerPop 1s cubic-bezier(.34,1.56,.64,1) .3s forwards;
+        }
+
+        @keyframes bannerPop {
+            0% { transform: translate(-50%, -50%) scale(0); opacity: 0; }
+            60% { transform: translate(-50%, -50%) scale(1.15); opacity: 1; }
+            100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+        }
+
+        .banner-title {
+            font-size: clamp(36px, 8vw, 72px);
+            font-weight: 900;
+            background: linear-gradient(135deg, #ffd700, #ff6b35, #ff0844, #ffd700);
+            background-size: 300% 300%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: goldShine 2s ease infinite;
+            filter: drop-shadow(0 0 30px rgba(255,215,0,.6));
+            letter-spacing: 8px;
+        }
+
+        .banner-sub {
+            font-size: clamp(16px, 3vw, 24px);
+            color: #ffd700;
+            margin-top: 12px;
+            letter-spacing: 4px;
+            opacity: .9;
+        }
+
+        @keyframes goldShine {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+
+        .media-wrap {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 5;
+            opacity: 0;
+            transform: scale(.3);
+        }
+
+        .stage.playing .media-wrap {
+            animation: mediaZoom 1s cubic-bezier(.34,1.56,.64,1) .8s forwards;
+        }
+
+        @keyframes mediaZoom {
+            to { opacity: 1; transform: scale(1); }
+        }
+
+        .stage video, .stage .audio-visual {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .audio-visual {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: radial-gradient(ellipse at center, #1a0a2e 0%, #000 70%);
+        }
+
+        .audio-visual.active { display: flex; }
+
+        .visualizer {
+            display: flex;
+            align-items: flex-end;
+            gap: 6px;
+            height: 120px;
+            margin-bottom: 40px;
+        }
+
+        .visualizer span {
+            width: 8px;
+            background: linear-gradient(to top, #ff0844, #ffd700);
+            border-radius: 4px;
+            animation: barDance .6s ease-in-out infinite alternate;
+        }
+
+        .visualizer span:nth-child(1) { animation-delay: 0s; height: 40px; }
+        .visualizer span:nth-child(2) { animation-delay: .1s; height: 70px; }
+        .visualizer span:nth-child(3) { animation-delay: .2s; height: 100px; }
+        .visualizer span:nth-child(4) { animation-delay: .3s; height: 80px; }
+        .visualizer span:nth-child(5) { animation-delay: .4s; height: 110px; }
+        .visualizer span:nth-child(6) { animation-delay: .5s; height: 60px; }
+        .visualizer span:nth-child(7) { animation-delay: .6s; height: 90px; }
+        .visualizer span:nth-child(8) { animation-delay: .7s; height: 50px; }
+
+        @keyframes barDance { to { height: 120px; } }
+
+        .audio-title {
+            font-size: 28px;
+            color: #ffd700;
+            letter-spacing: 6px;
+            font-weight: 700;
+        }
+
+        .close-btn {
+            position: absolute;
+            top: 20px; right: 20px;
+            z-index: 30;
+            width: 44px; height: 44px;
+            border: 2px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            background: rgba(0,0,0,.5);
+            color: #fff;
+            font-size: 20px;
+            cursor: pointer;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .close-btn:hover { background: rgba(255,255,255,.2); }
+        .stage.playing .close-btn { display: flex; }
+
+        #stageVideo { display: none; }
+        #stageVideo.active { display: block; }
     </style>
 </head>
 <body>
-<div class="container">
-    <h1>🎤 语音控制音视频</h1>
-    <p class="tips">支持命令：播放视频、暂停视频、播放音乐、暂停音乐<br>开启后持续监听，断开会自动重连，无需反复点击。</p>
 
-    <div class="card">
-        <h3>🔑 讯飞语音识别</h3>
-        <label>APPID</label>
-        <input id="appId" value="bab98dfc">
-        <label>APIKey</label>
-        <input id="apiKey" value="e3a1bd8e628d45ac6214efd43cb1a32a">
-        <label>APISecret</label>
-        <input id="apiSecret" value="NjJlNTlhMDNiY2JhNjE2ZWYyYTYzN2M4">
+<button class="config-toggle" id="configToggle">⚙ 密钥</button>
+<div class="config-panel" id="configPanel">
+    <label>APPID</label>
+    <input id="appId" value="bab98dfc">
+    <label>APIKey</label>
+    <input id="apiKey" value="e3a1bd8e628d45ac6214efd43cb1a32a">
+    <label>APISecret</label>
+    <input id="apiSecret" value="NjJlNTlhMDNiY2JhNjE2ZWYyYTYzN2M4">
+</div>
+
+<div class="main">
+    <h1 class="greeting">有什么我能帮你的吗？</h1>
+    <div class="chips">
+        <span class="chip">🎬 说「播放视频」开启开幕式</span>
+        <span class="chip">🎵 说「播放音频」奏响乐章</span>
+        <span class="chip">🎤 点击右下角麦克风开始监听</span>
     </div>
+    <p class="hint">
+        点击右下角 <strong>麦克风</strong> 开启语音监听，图标变红即正在监听<br>
+        说 <strong>「播放视频」</strong> 随机播放网络视频（1分钟以上）· 说 <strong>「播放音频」</strong> 随机播放音乐
+    </p>
+</div>
 
-    <button class="voice-btn" id="voiceBtn">开启语音监听</button>
-    <p class="result" id="result">等待开启...</p>
-    <p class="status" id="status"></p>
-
-    <div class="card">
-        <h3>📽️ 视频</h3>
-        <video id="video" controls playsinline webkit-playsinline>
-            <source src="https://www.w3school.com.cn/i/movie.mp4" type="video/mp4">
-        </video>
+<div class="bottom-bar">
+    <div class="input-box">
+        <span class="input-placeholder" id="placeholder">发消息或语音指令...</span>
+        <span class="voice-status" id="voiceStatus"></span>
+        <button class="mic-btn" id="micBtn" title="开启语音监听">
+            <svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
+        </button>
     </div>
+</div>
 
-    <div class="card">
-        <h3>🎵 音乐</h3>
-        <audio id="audio" controls>
-            <source src="https://www.w3school.com.cn/i/horse.ogg" type="audio/ogg">
-        </audio>
+<div class="stage" id="stage">
+    <div class="particles" id="particles"></div>
+    <div class="light-rays"></div>
+    <div class="curtain-left"></div>
+    <div class="curtain-right"></div>
+    <div class="banner">
+        <div class="banner-title" id="bannerTitle">开幕式</div>
+        <div class="banner-sub" id="bannerSub">精彩即将呈现</div>
     </div>
+    <div class="media-wrap">
+        <video id="stageVideo" playsinline webkit-playsinline></video>
+        <div class="audio-visual" id="audioVisual">
+            <div class="visualizer">
+                <span></span><span></span><span></span><span></span>
+                <span></span><span></span><span></span><span></span>
+            </div>
+            <div class="audio-title">🎵 盛典乐章</div>
+        </div>
+    </div>
+    <button class="close-btn" id="closeBtn">✕</button>
+    <audio id="stageAudio"></audio>
 </div>
 
 <script>
 (function () {
     'use strict';
 
+    const VIDEO_POOL = [
+        { url: 'https://www.w3school.com.cn/example/html5/mov_bbb.mp4', title: 'Big Buck Bunny' },
+        { url: 'https://www.w3school.com.cn/i/movie.mp4', title: 'W3School 示例影片' },
+        { url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4', title: 'Big Buck Bunny HD' },
+        { url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4', title: 'Elephants Dream' },
+        { url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4', title: 'Sintel' },
+        { url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4', title: 'Tears of Steel' },
+        { url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4', title: 'For Bigger Blazes' },
+        { url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4', title: 'For Bigger Escapes' },
+        { url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4', title: 'For Bigger Fun' },
+        { url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4', title: 'For Bigger Joyrides' },
+    ];
+
+    const AUDIO_POOL = [
+        { url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3', title: 'SoundHelix Song 1' },
+        { url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3', title: 'SoundHelix Song 2' },
+        { url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3', title: 'SoundHelix Song 3' },
+        { url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3', title: 'SoundHelix Song 4' },
+        { url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3', title: 'SoundHelix Song 5' },
+        { url: 'https://files.freemusicarchive.org/storage-freemusicarchive-org/music/no_curator/Komiku/Its_time_for_adventure/Komiku_-_05_-_Battle_of_Pogs.mp3', title: 'Battle of Pogs' },
+        { url: 'https://files.freemusicarchive.org/storage-freemusicarchive-org/music/ccCommunity/Chad_Crouch/Arps/Chad_Crouch_-_01_-_Algorithms.mp3', title: 'Algorithms' },
+    ];
+
     const $ = id => document.getElementById(id);
-    const voiceBtn = $('voiceBtn');
-    const result = $('result');
-    const statusEl = $('status');
-    const video = $('video');
-    const audio = $('audio');
+    const micBtn = $('micBtn');
+    const voiceStatus = $('voiceStatus');
+    const placeholder = $('placeholder');
+    const stage = $('stage');
+    const stageVideo = $('stageVideo');
+    const stageAudio = $('stageAudio');
+    const audioVisual = $('audioVisual');
+    const bannerTitle = $('bannerTitle');
+    const bannerSub = $('bannerSub');
+    const particles = $('particles');
+    const closeBtn = $('closeBtn');
 
-    let isListening = false;      // 用户是否想持续监听
-    let isBusy = false;
-    let manualStop = false;       // 用户手动关闭
-    let ws = null;
-    let audioContext = null;
-    let processor = null;
-    let mediaStream = null;
-    let sendInterval = null;
-    let reconnectTimer = null;
-    let isConnecting = false;
-    let pcmBuffer = [];
-    let frameStatus = 0;
-    let fullText = '';
-    let reconnectCount = 0;
+    let isListening = false, isBusy = false, manualStop = false;
+    let ws = null, audioContext = null, processor = null, mediaStream = null;
+    let sendInterval = null, reconnectTimer = null, isConnecting = false;
+    let pcmBuffer = [], frameStatus = 0, fullText = '', reconnectCount = 0;
 
-    function setStatus(msg) {
-        statusEl.innerHTML = isListening
-            ? `<span class="dot"></span>${msg}`
-            : msg;
-        console.log('[status]', msg);
-    }
+    $('configToggle').onclick = () => $('configPanel').classList.toggle('show');
+
+    function pickRandom(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
     function getConfig() {
         return {
@@ -102,6 +477,85 @@
         };
     }
 
+    function setVoiceUI(text, listening) {
+        voiceStatus.textContent = text || '';
+        micBtn.classList.toggle('active', listening);
+        placeholder.textContent = listening ? '正在监听语音指令...' : '发消息或语音指令...';
+    }
+
+    function spawnParticles() {
+        particles.innerHTML = '';
+        const colors = ['#ffd700', '#ff6b35', '#ff0844', '#ff4757', '#ffa502', '#fff'];
+        for (let i = 0; i < 80; i++) {
+            const p = document.createElement('div');
+            p.className = 'particle';
+            const size = 4 + Math.random() * 10;
+            p.style.cssText = `width:${size}px;height:${size}px;left:50%;top:50%;background:${colors[i%colors.length]};--tx:${(Math.random()-.5)*600}px;--ty:${(Math.random()-.5)*600}px;animation-duration:${.8+Math.random()*1.2}s;animation-delay:${Math.random()*.5}s;`;
+            particles.appendChild(p);
+        }
+    }
+
+    function openCeremony(type) {
+        closeCeremony(false);
+        stage.className = 'stage active entering';
+        spawnParticles();
+
+        if (type === 'video') {
+            const item = pickRandom(VIDEO_POOL);
+            bannerTitle.textContent = '🎬 开幕式';
+            bannerSub.textContent = item.title;
+            stageVideo.src = item.url;
+            stageVideo.classList.add('active');
+            audioVisual.classList.remove('active');
+            setTimeout(() => {
+                stage.classList.add('playing');
+                stage.classList.remove('entering');
+                stageVideo.play().then(() => requestFullscreen(stageVideo)).catch(console.warn);
+            }, 1200);
+            stageVideo.onended = () => closeCeremony(true);
+        } else {
+            const item = pickRandom(AUDIO_POOL);
+            bannerTitle.textContent = '🎵 音乐盛典';
+            bannerSub.textContent = item.title;
+            stageVideo.classList.remove('active');
+            audioVisual.classList.add('active');
+            stageAudio.src = item.url;
+            setTimeout(() => {
+                stage.classList.add('playing');
+                stage.classList.remove('entering');
+                stageAudio.play().then(() => requestFullscreen(stage)).catch(console.warn);
+            }, 1200);
+            stageAudio.onended = () => closeCeremony(true);
+        }
+    }
+
+    function requestFullscreen(el) {
+        const fn = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+        if (fn) fn.call(el).catch(() => {});
+    }
+
+    function exitFullscreen() {
+        const fn = document.exitFullscreen || document.webkitExitFullscreen;
+        if (fn && (document.fullscreenElement || document.webkitFullscreenElement)) fn.call(document).catch(() => {});
+    }
+
+    function closeCeremony(exitFs) {
+        stageVideo.pause(); stageAudio.pause();
+        stageVideo.src = ''; stageAudio.src = '';
+        stage.className = 'stage';
+        stageVideo.classList.remove('active');
+        audioVisual.classList.remove('active');
+        if (exitFs) exitFullscreen();
+    }
+
+    closeBtn.onclick = () => closeCeremony(true);
+
+    function executeCommand(text) {
+        const cmd = text.replace(/\s/g, '');
+        if (cmd.includes('播放视频')) { setVoiceUI('🎬 检测到：播放视频', isListening); openCeremony('video'); }
+        else if (cmd.includes('播放音频') || cmd.includes('播放音乐')) { setVoiceUI('🎵 检测到：播放音频', isListening); openCeremony('audio'); }
+    }
+
     function unlockAudioContextSync() {
         const Ctx = window.AudioContext || window.webkitAudioContext;
         if (!audioContext || audioContext.state === 'closed') audioContext = new Ctx();
@@ -109,16 +563,14 @@
         try {
             const buf = audioContext.createBuffer(1, 1, 22050);
             const src = audioContext.createBufferSource();
-            src.buffer = buf;
-            src.connect(audioContext.destination);
-            src.start(0);
+            src.buffer = buf; src.connect(audioContext.destination); src.start(0);
         } catch (e) {}
     }
 
     async function waitAudioRunning(ms) {
         const t0 = Date.now();
         while (audioContext.state !== 'running') {
-            if (Date.now() - t0 > ms) throw new Error('音频引擎启动超时，请换 Chrome');
+            if (Date.now() - t0 > ms) throw new Error('音频引擎启动超时');
             if (audioContext.state === 'suspended') await audioContext.resume();
             await new Promise(r => setTimeout(r, 50));
         }
@@ -147,8 +599,7 @@
         const out = new Float32Array(len);
         for (let i = 0; i < len; i++) {
             const pos = i * ratio, idx = Math.floor(pos), f = pos - idx;
-            const a = input[idx] || 0, b = input[idx + 1] || a;
-            out[i] = a + (b - a) * f;
+            out[i] = (input[idx]||0) + ((input[idx+1]||input[idx]||0) - (input[idx]||0)) * f;
         }
         return out;
     }
@@ -178,54 +629,24 @@
         return out.buffer;
     }
 
-    function executeCommand(text) {
-        const cmd = text.replace(/\s/g, '');
-        if (cmd.includes('播放视频')) video.play().catch(() => {});
-        else if (cmd.includes('暂停视频')) { video.pause(); result.textContent = '✅ 已暂停视频'; }
-        else if (cmd.includes('播放音乐')) audio.play().catch(() => {});
-        else if (cmd.includes('暂停音乐')) { audio.pause(); result.textContent = '✅ 已暂停音乐'; }
-    }
-
     function parseResult(data) {
         const json = JSON.parse(data);
-        if (json.code !== 0) {
-            console.warn('讯飞错误', json);
-            return;
-        }
-        if (!json.data || !json.data.result) return;
-
+        if (json.code !== 0 || !json.data || !json.data.result) return;
         let text = '';
         (json.data.result.ws || []).forEach(w => (w.cw || []).forEach(c => text += c.w));
         if (!text) return;
-
-        if (json.data.result.pgs === 'rpl') {
-            fullText = json.data.result.rg ? fullText.substring(0, json.data.result.rg[0]) + text : text;
-        } else {
-            fullText += text;
-        }
-        result.textContent = '你说：' + fullText;
-
-        // 一句话识别完毕，执行命令，然后等 ws 断开后自动重连
-        if (json.data.status === 2) {
-            executeCommand(fullText);
-            fullText = '';
-        }
+        if (json.data.result.pgs === 'rpl') fullText = json.data.result.rg ? fullText.substring(0, json.data.result.rg[0]) + text : text;
+        else fullText += text;
+        setVoiceUI('你说：' + fullText, isListening);
+        if (json.data.status === 2) { executeCommand(fullText); fullText = ''; }
     }
 
     function sendFrame(base64, status) {
         if (!ws || ws.readyState !== WebSocket.OPEN) return;
-        const frame = {
-            data: { status, format: 'audio/L16;rate=16000', encoding: 'raw', audio: base64 }
-        };
+        const frame = { data: { status, format: 'audio/L16;rate=16000', encoding: 'raw', audio: base64 } };
         if (status === 0) {
             frame.common = { app_id: getConfig().appId };
-            frame.business = {
-                language: 'zh_cn',
-                domain: 'iat',
-                accent: 'mandarin',
-                vad_eos: 8000,   // 8秒静音才结束一句，减少频繁断开
-                dwa: 'wpgs'
-            };
+            frame.business = { language: 'zh_cn', domain: 'iat', accent: 'mandarin', vad_eos: 8000, dwa: 'wpgs' };
         }
         ws.send(JSON.stringify(frame));
     }
@@ -262,134 +683,70 @@
         ws = null;
     }
 
-    // ★ 核心：断开后自动重连，麦克风不中断
     function scheduleReconnect(reason) {
         if (!isListening || manualStop) return;
         clearTimeout(reconnectTimer);
         const delay = Math.min(500 + reconnectCount * 200, 2000);
-        setStatus(`${reason}，${delay/1000}秒后自动重连...（第${reconnectCount+1}次）`);
-        reconnectTimer = setTimeout(() => connectWebSocket(), delay);
+        setVoiceUI(`${reason}，自动重连中...`, true);
+        reconnectTimer = setTimeout(connectWebSocket, delay);
     }
 
     async function connectWebSocket() {
         if (!isListening || manualStop || isConnecting) return;
-
         isConnecting = true;
         closeWSOnly();
         frameStatus = 0;
         fullText = '';
-
         try {
             const cfg = getConfig();
             ws = new WebSocket(await getWebSocketUrl(cfg.apiKey, cfg.apiSecret));
-
-            ws.onopen = () => {
-                isConnecting = false;
-                reconnectCount = 0;
-                setStatus('实时监听中，请随时说话...');
-                startSendLoop();
-            };
-
-            ws.onmessage = e => { try { parseResult(e.data); } catch (err) { console.error(err); } };
-
-            ws.onerror = () => {
-                isConnecting = false;
-                reconnectCount++;
-                scheduleReconnect('连接异常');
-            };
-
-            ws.onclose = () => {
-                isConnecting = false;
-                if (isListening && !manualStop) {
-                    reconnectCount++;
-                    scheduleReconnect('会话结束');
-                }
-            };
+            ws.onopen = () => { isConnecting = false; reconnectCount = 0; setVoiceUI('实时监听中', true); startSendLoop(); };
+            ws.onmessage = e => { try { parseResult(e.data); } catch (err) {} };
+            ws.onerror = () => { isConnecting = false; reconnectCount++; scheduleReconnect('连接异常'); };
+            ws.onclose = () => { isConnecting = false; if (isListening && !manualStop) { reconnectCount++; scheduleReconnect('会话结束'); } };
         } catch (err) {
-            isConnecting = false;
-            reconnectCount++;
-            scheduleReconnect('连接失败');
+            isConnecting = false; reconnectCount++; scheduleReconnect('连接失败');
         }
     }
 
-    function stopListening(showMsg) {
-        manualStop = true;
-        isListening = false;
+    function stopListening() {
+        manualStop = true; isListening = false;
         clearTimeout(reconnectTimer);
-        reconnectTimer = null;
-
-        clearInterval(sendInterval);
-        sendInterval = null;
-
+        clearInterval(sendInterval); sendInterval = null;
         closeWSOnly();
-
         if (processor) { processor.onaudioprocess = null; processor.disconnect(); processor = null; }
         if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
-
-        pcmBuffer = [];
-        frameStatus = 0;
-        fullText = '';
-        reconnectCount = 0;
-        isConnecting = false;
-        isBusy = false;
-
-        voiceBtn.textContent = '开启语音监听';
-        voiceBtn.classList.remove('active');
-        voiceBtn.disabled = false;
-
-        if (showMsg) {
-            result.textContent = '已关闭监听';
-            setStatus('已停止');
-        }
+        pcmBuffer = []; frameStatus = 0; fullText = ''; reconnectCount = 0;
+        isConnecting = false; isBusy = false;
+        setVoiceUI('', false);
     }
 
     async function startListening() {
         if (isBusy) return;
         const cfg = getConfig();
         if (!cfg.appId || !cfg.apiKey || !cfg.apiSecret) {
-            result.textContent = '请先填写讯飞密钥';
+            setVoiceUI('请先配置讯飞密钥', false);
+            $('configPanel').classList.add('show');
             return;
         }
-
-        isBusy = true;
-        voiceBtn.disabled = true;
-        manualStop = false;
-        isListening = true;
-
+        isBusy = true; manualStop = false; isListening = true;
         try {
-            setStatus('启动音频引擎...');
+            setVoiceUI('启动中...', true);
             await waitAudioRunning(5000);
-
-            setStatus('申请麦克风...');
             mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
             startCapture();
-            voiceBtn.textContent = '关闭语音监听';
-            voiceBtn.classList.add('active');
-            voiceBtn.disabled = false;
             isBusy = false;
-
-            // 首次连接 + 之后全靠自动重连
             await connectWebSocket();
-
         } catch (err) {
-            result.textContent = err.message || '启动失败';
-            stopListening(false);
+            setVoiceUI(err.message || '启动失败', false);
+            stopListening();
         }
     }
 
-    voiceBtn.onclick = async () => {
-        if (isListening) {
-            stopListening(true);
-            return;
-        }
-        stopListening(false);
-        try {
-            unlockAudioContextSync();
-        } catch (err) {
-            result.textContent = err.message;
-            return;
-        }
+    micBtn.onclick = async () => {
+        if (isListening) { stopListening(); return; }
+        stopListening();
+        try { unlockAudioContextSync(); } catch (e) { setVoiceUI('浏览器不支持音频', false); return; }
         await startListening();
     };
 })();
