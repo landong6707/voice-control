@@ -13,7 +13,7 @@
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-            background: #fff;
+            background: #fcfcff;
             color: #1a1a1a;
             min-height: 100vh;
             min-height: 100dvh;
@@ -26,7 +26,14 @@
         body.video-mode { overflow: hidden; background: #000; }
         body.video-mode .center-wrap,
         body.video-mode .config-toggle,
-        body.video-mode .config-panel { visibility: hidden; pointer-events: none; }
+        body.video-mode .config-panel,
+        body.video-mode .fade-overlay { visibility: hidden; pointer-events: none; }
+
+        body.transitioning .center-wrap {
+            opacity: 0;
+            transform: scale(0.98);
+            transition: opacity 1s ease, transform 1s ease;
+        }
 
         /* 整体居中：GIF 在上，输入框在下 */
         .center-wrap {
@@ -38,13 +45,52 @@
             width: 100%;
             max-width: 720px;
             padding: 24px;
+            transition: opacity 0.4s ease, transform 0.4s ease;
         }
 
         .mascot-wrap {
+            position: relative;
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: opacity .4s, transform .4s;
+            transition: opacity 0.5s ease, transform 0.5s ease;
+        }
+
+        .mascot-bubble {
+            position: absolute;
+            bottom: calc(100% + 14px);
+            left: 50%;
+            transform: translateX(-50%) translateY(6px) scale(0.92);
+            background: #fff;
+            border: 1px solid #eaeaef;
+            border-radius: 18px;
+            padding: 12px 22px;
+            font-size: 15px;
+            color: #555;
+            box-shadow: 0 6px 24px rgba(120, 120, 160, 0.1);
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.4s ease, transform 0.45s cubic-bezier(0.34, 1.4, 0.64, 1);
+            z-index: 10;
+        }
+
+        .mascot-bubble.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0) scale(1);
+        }
+
+        .mascot-bubble::after {
+            content: '';
+            position: absolute;
+            bottom: -5px;
+            left: 50%;
+            transform: translateX(-50%) rotate(45deg);
+            width: 10px;
+            height: 10px;
+            background: #fff;
+            border-right: 1px solid #eaeaef;
+            border-bottom: 1px solid #eaeaef;
         }
 
         .mascot-wrap.hidden {
@@ -63,21 +109,21 @@
 
         .input-box {
             width: 100%;
-            background: #f7f7f8;
-            border: 1px solid #e8e8e8;
+            background: #fff;
+            border: 1px solid #eaeaef;
             border-radius: 24px;
             padding: 14px 18px;
             display: flex;
             align-items: center;
             gap: 12px;
-            box-shadow: 0 2px 16px rgba(0, 0, 0, 0.04);
+            box-shadow: 0 2px 16px rgba(120, 120, 160, 0.06);
         }
 
         .input-placeholder {
             flex: 1;
             text-align: left;
             font-size: 15px;
-            color: #aaa;
+            color: #b0b0bc;
             user-select: none;
         }
 
@@ -98,16 +144,16 @@
         .mic-btn svg { width: 22px; height: 22px; fill: #888; transition: fill .3s; }
 
         .mic-btn.active {
-            background: linear-gradient(135deg, #ff4d4f, #ff7875);
-            box-shadow: 0 0 0 4px rgba(255, 77, 79, .25);
+            background: linear-gradient(135deg, #7c8aff, #9aa5ff);
+            box-shadow: 0 0 0 4px rgba(124, 138, 255, 0.22);
             animation: micPulse 1.5s ease-in-out infinite;
         }
 
         .mic-btn.active svg { fill: #fff; }
 
         @keyframes micPulse {
-            0%, 100% { box-shadow: 0 0 0 4px rgba(255, 77, 79, .25); }
-            50% { box-shadow: 0 0 0 8px rgba(255, 77, 79, .12); }
+            0%, 100% { box-shadow: 0 0 0 4px rgba(124, 138, 255, 0.22); }
+            50% { box-shadow: 0 0 0 8px rgba(124, 138, 255, 0.1); }
         }
 
         .config-toggle {
@@ -127,8 +173,8 @@
             position: fixed;
             top: 40px;
             right: 12px;
-            background: #fff;
-            border: 1px solid #eee;
+            background: #fcfcff;
+            border: 1px solid #eaeaef;
             border-radius: 12px;
             padding: 16px;
             width: 280px;
@@ -147,6 +193,23 @@
             font-size: 13px;
         }
 
+        /* 柔和淡化过渡层 */
+        .fade-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 500;
+            background: #fcfcff;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 1.4s ease-in-out, background 1.4s ease-in-out;
+        }
+
+        .fade-overlay.active {
+            opacity: 1;
+            background: #000;
+            pointer-events: all;
+        }
+
         /* 开幕式全屏舞台 — 播放时整屏只有视频 */
         .stage {
             display: none;
@@ -157,9 +220,12 @@
             height: 100dvh;
             z-index: 1000;
             background: #000;
+            opacity: 0;
+            transition: opacity 1s ease-in-out;
         }
 
         .stage.active { display: block; }
+        .stage.visible { opacity: 1; }
 
         .stage.video-only .particles,
         .stage.video-only .light-rays,
@@ -246,14 +312,17 @@
             height: 100%;
             object-fit: cover;
             background: #000;
+            opacity: 0;
+            transition: opacity 1.2s ease-in-out;
         }
 
         #stageVideo.active { display: block; }
+        .stage.playing #stageVideo.active { opacity: 1; }
 
         .loading-tip {
             position: absolute; top: 50%; left: 50%;
             transform: translate(-50%, -50%);
-            color: #ffd700; font-size: 18px; z-index: 6;
+            color: #b0b0bc; font-size: 16px; z-index: 6;
             display: none;
         }
 
@@ -265,8 +334,8 @@
             position: fixed;
             inset: 0;
             z-index: 9999;
-            background: rgba(0, 0, 0, .88);
-            color: #fff;
+            background: rgba(252, 252, 255, 0.96);
+            color: #444;
             flex-direction: column;
             align-items: center;
             justify-content: center;
@@ -278,7 +347,7 @@
         .browser-tip.show { display: flex; }
 
         .browser-tip p { font-size: 16px; max-width: 320px; }
-        .browser-tip strong { color: #ffd700; font-size: 18px; }
+        .browser-tip strong { color: #6b7aff; font-size: 18px; }
         .browser-tip .arrow {
             position: absolute;
             top: 12px;
@@ -302,13 +371,21 @@
     <label>APISecret</label><input id="apiSecret" value="NjJlNTlhMDNiY2JhNjE2ZWYyYTYzN2M4">
 </div>
 
+<div class="fade-overlay" id="fadeOverlay"></div>
+
 <div class="browser-tip" id="browserTip">
     <div class="arrow">↗</div>
     <p><strong>请用系统浏览器打开</strong><br>微信/QQ 内置浏览器可能无法正常访问<br>点击右上角 <strong>···</strong> → 选择「在浏览器打开」<br>推荐使用 Chrome 或 Safari</p>
 </div>
 
+<div class="browser-tip" id="networkTip">
+    <p><strong>当前 WiFi 可能无法访问</strong><br>部分 WiFi 会屏蔽 GitHub 或视频资源<br>请尝试：<strong>切换手机流量</strong> 或更换 WiFi<br>或在浏览器地址栏直接输入网址重试</p>
+    <button type="button" id="networkTipClose" style="margin-top:20px;padding:10px 24px;border:none;border-radius:20px;background:#6b7aff;color:#fff;font-size:14px;cursor:pointer;">我知道了</button>
+</div>
+
 <div class="center-wrap">
     <div class="mascot-wrap" id="mascotWrap">
+        <div class="mascot-bubble" id="mascotBubble"></div>
         <img id="mascotGif" src="assets/mascot.gif" alt="吉祥物" onerror="this.onerror=null;this.src='mascot.gif'">
     </div>
     <div class="input-box">
@@ -344,6 +421,12 @@
         { url: 'assets/videos/opening.mp4', title: '本地视频' },
     ];
 
+    const BEAR_REPLIES = [
+        '收到！精彩即将开始～',
+        '好的，马上为您播放！',
+        '遵命，开幕式来啦！'
+    ];
+
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
         (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     const isWeChat = /MicroMessenger/i.test(navigator.userAgent);
@@ -354,6 +437,8 @@
     const micBtn = $('micBtn');
     const placeholder = $('placeholder');
     const mascotWrap = $('mascotWrap');
+    const mascotBubble = $('mascotBubble');
+    const fadeOverlay = $('fadeOverlay');
     const stage = $('stage');
     const stageVideo = $('stageVideo');
     const bannerTitle = $('bannerTitle');
@@ -361,6 +446,7 @@
     const particles = $('particles');
     const loadingTip = $('loadingTip');
     const browserTip = $('browserTip');
+    const networkTip = $('networkTip');
 
     let isListening = false, isBusy = false, manualStop = false;
     let ws = null, audioContext = null, processor = null, mediaStream = null;
@@ -385,7 +471,36 @@
     }
 
     function hideMascot() { mascotWrap.classList.add('hidden'); }
-    function showMascot() { mascotWrap.classList.remove('hidden'); }
+    function showMascot() {
+        mascotWrap.classList.remove('hidden');
+        hideMascotReply();
+    }
+
+    function showMascotReply(text) {
+        mascotBubble.textContent = text;
+        mascotBubble.classList.add('show');
+    }
+
+    function hideMascotReply() {
+        mascotBubble.classList.remove('show');
+    }
+
+    function delay(ms) {
+        return new Promise(r => setTimeout(r, ms));
+    }
+
+    async function playFadeTransition() {
+        document.body.classList.add('transitioning');
+        fadeOverlay.classList.add('active');
+        await delay(1400);
+    }
+
+    async function ensureVideoReady() {
+        if (preloadedVideoItem && stageVideo.readyState >= 3 && stageVideo.src) {
+            return preloadedVideoItem;
+        }
+        return loadVideoWithFallback();
+    }
 
     async function unlockMediaPlayback() {
         if (mediaUnlocked) return;
@@ -548,8 +663,8 @@
         stageVideo.onended = null;
         stage.className = 'stage';
         stageVideo.classList.remove('active');
-        document.body.classList.remove('video-mode');
-        /* 保留 src 供下次秒开，仅重置播放位置 */
+        document.body.classList.remove('video-mode', 'transitioning');
+        fadeOverlay.classList.remove('active');
         if (stageVideo.src) stageVideo.currentTime = 0;
     }
 
@@ -565,28 +680,30 @@
     async function openCeremony() {
         if (ceremonyBusy) return;
         ceremonyBusy = true;
+
+        const reply = BEAR_REPLIES[Math.floor(Math.random() * BEAR_REPLIES.length)];
+        showMascotReply(reply);
+        placeholder.textContent = reply;
+
+        const videoReady = ensureVideoReady();
+
+        /* 熊先说话，再柔和淡化进入视频 */
+        await delay(2200);
+        hideMascotReply();
         hideMascot();
 
-        /* 第一步：立刻黑屏全屏，零等待 */
         stage.className = 'stage active loading video-only';
-        document.body.classList.add('video-mode');
-        loadingTip.style.display = 'block';
-        loadingTip.textContent = '正在打开...';
         stageVideo.classList.add('active');
-        enterVideoFullscreen().catch(() => {});
+        loadingTip.style.display = 'block';
+        loadingTip.textContent = '正在准备...';
+
+        await playFadeTransition();
 
         try {
-            let item = preloadedVideoItem;
-            if (item && stageVideo.readyState >= 3 && stageVideo.src) {
-                /* 预加载已完成，直接播 */
-                loadingTip.style.display = 'none';
-            } else {
-                item = await loadVideoWithFallback();
-                loadingTip.style.display = 'none';
-            }
-
-            stage.classList.remove('loading');
-            stage.classList.add('playing', 'loaded', 'video-only');
+            await videoReady;
+            loadingTip.style.display = 'none';
+            stage.classList.add('visible', 'playing', 'loaded', 'video-only');
+            document.body.classList.add('video-mode');
 
             await safePlayVideo();
             await enterVideoFullscreen();
@@ -900,6 +1017,26 @@
         placeholder.textContent = '请用系统浏览器打开';
     } else if (!window.crypto || !window.crypto.subtle) {
         placeholder.textContent = '请用 Chrome 或 Safari 打开';
+    } else {
+        checkNetworkAccess();
+    }
+
+    $('networkTipClose').onclick = () => networkTip.classList.remove('show');
+
+    async function checkNetworkAccess() {
+        try {
+            const ctrl = new AbortController();
+            setTimeout(() => ctrl.abort(), 6000);
+            const res = await fetch('https://www.w3school.com.cn/example/html5/mov_bbb.mp4', {
+                method: 'HEAD',
+                cache: 'no-store',
+                signal: ctrl.signal
+            });
+            if (!res.ok) throw new Error('fail');
+        } catch (e) {
+            networkTip.classList.add('show');
+            placeholder.textContent = 'WiFi 可能受限，建议切换流量';
+        }
     }
 })();
 </script>
