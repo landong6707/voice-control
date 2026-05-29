@@ -378,11 +378,6 @@
     <p><strong>请用系统浏览器打开</strong><br>微信/QQ 内置浏览器可能无法正常访问<br>点击右上角 <strong>···</strong> → 选择「在浏览器打开」<br>推荐使用 Chrome 或 Safari</p>
 </div>
 
-<div class="browser-tip" id="networkTip">
-    <p><strong>当前 WiFi 可能无法访问</strong><br>部分 WiFi 会屏蔽 GitHub 或视频资源<br>请尝试：<strong>切换手机流量</strong> 或更换 WiFi<br>或在浏览器地址栏直接输入网址重试</p>
-    <button type="button" id="networkTipClose" style="margin-top:20px;padding:10px 24px;border:none;border-radius:20px;background:#6b7aff;color:#fff;font-size:14px;cursor:pointer;">我知道了</button>
-</div>
-
 <div class="center-wrap">
     <div class="mascot-wrap" id="mascotWrap">
         <div class="mascot-bubble" id="mascotBubble"></div>
@@ -446,7 +441,6 @@
     const particles = $('particles');
     const loadingTip = $('loadingTip');
     const browserTip = $('browserTip');
-    const networkTip = $('networkTip');
 
     let isListening = false, isBusy = false, manualStop = false;
     let ws = null, audioContext = null, processor = null, mediaStream = null;
@@ -1017,26 +1011,6 @@
         placeholder.textContent = '请用系统浏览器打开';
     } else if (!window.crypto || !window.crypto.subtle) {
         placeholder.textContent = '请用 Chrome 或 Safari 打开';
-    } else {
-        checkNetworkAccess();
-    }
-
-    $('networkTipClose').onclick = () => networkTip.classList.remove('show');
-
-    async function checkNetworkAccess() {
-        try {
-            const ctrl = new AbortController();
-            setTimeout(() => ctrl.abort(), 6000);
-            const res = await fetch('https://www.w3school.com.cn/example/html5/mov_bbb.mp4', {
-                method: 'HEAD',
-                cache: 'no-store',
-                signal: ctrl.signal
-            });
-            if (!res.ok) throw new Error('fail');
-        } catch (e) {
-            networkTip.classList.add('show');
-            placeholder.textContent = 'WiFi 可能受限，建议切换流量';
-        }
     }
 })();
 </script>
