@@ -6,7 +6,7 @@
     <title>语音控制音视频</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: system-ui, -apple-system, sans-serif; padding: 16px; background: #f8fafc; color: #1e293b; }
+        body { font-family: system-ui, -apple-system, sans-serif; padding: 16px; background: #f8fafc; }
         .container { max-width: 900px; margin: 0 auto; }
         .card { margin: 16px 0; border: 1px solid #e2e8f0; padding: 16px; border-radius: 12px; background: #fff; }
         h1 { font-size: 22px; margin-bottom: 8px; }
@@ -23,7 +23,7 @@
         .tips { color: #64748b; font-size: 14px; line-height: 1.6; margin: 8px 0; }
         .result { color: #2563eb; font-weight: 600; font-size: 16px; margin: 10px 0; min-height: 22px; }
         .status { color: #64748b; font-size: 13px; line-height: 1.5; }
-        .env-info { background: #f1f5f9; border-radius: 8px; padding: 12px; font-size: 13px; line-height: 1.6; color: #475569; }
+        .env-info { background: #f1f5f9; border-radius: 8px; padding: 12px; font-size: 13px; line-height: 1.6; }
         .warn { color: #dc2626; }
         .ok { color: #16a34a; }
         .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; margin-right: 6px; background: #e2e8f0; }
@@ -41,7 +41,6 @@
 
     <div class="card">
         <h3>🔑 讯飞语音识别</h3>
-        <p class="tips">国内通用方案，兼容 Windows / Mac / Android，不依赖 Google。</p>
         <label>APPID</label>
         <input id="appId" value="bab98dfc">
         <label>APIKey</label>
@@ -84,18 +83,9 @@
     const UA = navigator.userAgent;
     const env = {
         isIOS: /iPhone|iPad|iPod/i.test(UA),
-        isAndroid: /Android/i.test(UA),
         isMac: /Macintosh|Mac OS X/i.test(UA),
-        isWindows: /Windows/i.test(UA),
-        isWeChat: /MicroMessenger/i.test(UA),
-        isQQ: /\bQQ\//i.test(UA),
         isSafari: /Safari/i.test(UA) && !/Chrome|CriOS|Edg|OPR/i.test(UA),
-        isChrome: /Chrome|CriOS/i.test(UA),
-        isEdge: /Edg/i.test(UA),
-        isSecure: window.isSecureContext,
-        hasMedia: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
-        hasWebSocket: 'WebSocket' in window,
-        hasCrypto: !!(window.crypto && window.crypto.subtle)
+        isSecure: window.isSecureContext
     };
 
     let isListening = false;
@@ -109,13 +99,6 @@
     let pcmBuffer = [];
     let frameStatus = 0;
     let fullText = '';
-
-    ['appId', 'apiKey', 'apiSecret'].forEach(key => {
-        const el = $(key);
-        const saved = localStorage.getItem('xfyun_' + key);
-        if (saved) el.value = saved;
-        el.addEventListener('change', () => localStorage.setItem('xfyun_' + key, el.value.trim()));
-    });
 
     function setStatus(msg) {
         statusEl.textContent = msg;
@@ -131,35 +114,53 @@
     }
 
     function detectEnvironment() {
-        let os = env.isIOS ? 'iOS' : env.isAndroid ? 'Android' : env.isMac ? 'macOS' : env.isWindows ? 'Windows' : '其他系统';
-        let browser = env.isWeChat ? '微信内置浏览器' : env.isQQ ? 'QQ内置浏览器' : env.isChrome ? 'Chrome' : env.isEdge ? 'Edge' : env.isSafari ? 'Safari' : '其他浏览器';
-        let support = [];
-        let warnings = [];
-
-        if (env.isSecure) support.push('HTTPS 安全环境');
-        else warnings.push('请通过 HTTPS 访问，本地 file:// 不可用');
-
-        if (env.hasMedia) support.push('麦克风 API 可用');
-        else warnings.push('当前浏览器不支持麦克风');
-
-        if (env.hasWebSocket) support.push('WebSocket 可用');
-        else warnings.push('当前浏览器不支持 WebSocket');
-
-        if (env.hasCrypto) support.push('加密 API 可用');
-        else warnings.push('当前浏览器不支持加密 API');
-
-        if (env.isWeChat || env.isQQ) warnings.push('微信/QQ 内置浏览器常无法使用，请复制链接到 Chrome / Safari 打开');
-        if (env.isIOS) warnings.push('iPhone/iPad 可用性一般，建议优先用 Android 或电脑 Chrome 测试');
-
-        let recommend = '推荐使用：Windows/Mac/Android 的 Chrome 浏览器 + HTTPS 访问';
-
+        const os = env.isIOS ? 'iOS' : env.isMac ? 'macOS' : '其他';
+        const browser = env.isSafari ? 'Safari' : 'Chrome/Edge 等';
         envInfo.innerHTML =
             `<span class="tag">${os}</span><span class="tag">${browser}</span><br>` +
-            support.map(s => `<div class="ok">✅ ${s}</div>`).join('') +
-            warnings.map(w => `<div class="warn">⚠️ ${w}</div>`).join('') +
-            `<div style="margin-top:8px;">${recommend}</div>`;
+            (env.isSecure ? '<div class="ok">✅ HTTPS 环境正常</div>' : '<div class="warn">⚠️ 请用 HTTPS 打开</div>') +
+            (env.isSafari ? '<div class="warn">⚠️ Safari 对音频限制较多，Mac 建议优先用 Chrome</div>' : '');
+    }
 
-        return warnings.length === 0 || (!env.isWeChat && !env.isQQ && env.isSecure && env.hasMedia);
+    // ===== 关键修复：在用户点击的同步阶段唤醒 AudioContext =====
+    function unlockAudioContextSync() {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) throw new Error('浏览器不支持 AudioContext');
+
+        if (!audioContext || audioContext.state === 'closed') {
+            audioContext = new Ctx();
+        }
+
+        // Safari 必须在点击瞬间 resume，不能等 getUserMedia 之后
+        if (audioContext.state === 'suspended') {
+            audioContext.resume();
+        }
+
+        // 播放静音 buffer，帮助 Mac Safari 真正启动
+        try {
+            const buffer = audioContext.createBuffer(1, 1, 22050);
+            const source = audioContext.createBufferSource();
+            source.buffer = buffer;
+            source.connect(audioContext.destination);
+            source.start(0);
+        } catch (e) {
+            console.warn('silent buffer failed', e);
+        }
+
+        return audioContext;
+    }
+
+    async function waitAudioRunning(timeoutMs) {
+        const start = Date.now();
+        while (audioContext.state !== 'running') {
+            if (Date.now() - start > timeoutMs) {
+                throw new Error('音频引擎启动超时，请换 Chrome 或刷新页面');
+            }
+            if (audioContext.state === 'suspended') {
+                await audioContext.resume();
+            }
+            await new Promise(r => setTimeout(r, 50));
+        }
     }
 
     async function hmacSha256Base64(secret, message) {
@@ -221,42 +222,24 @@
 
     function executeCommand(text) {
         const cmd = text.replace(/\s/g, '');
-        if (cmd.includes('播放视频')) {
-            video.play().catch(() => result.textContent = '视频播放失败，请先手动点一次播放');
-        } else if (cmd.includes('暂停视频')) {
-            video.pause();
-            result.textContent = '已暂停视频';
-        } else if (cmd.includes('播放音乐')) {
-            audio.play().catch(() => result.textContent = '音乐播放失败，请先手动点一次播放');
-        } else if (cmd.includes('暂停音乐')) {
-            audio.pause();
-            result.textContent = '已暂停音乐';
-        }
+        if (cmd.includes('播放视频')) video.play().catch(() => result.textContent = '请先手动点一次视频播放');
+        else if (cmd.includes('暂停视频')) { video.pause(); result.textContent = '已暂停视频'; }
+        else if (cmd.includes('播放音乐')) audio.play().catch(() => result.textContent = '请先手动点一次音乐播放');
+        else if (cmd.includes('暂停音乐')) { audio.pause(); result.textContent = '已暂停音乐'; }
     }
 
     function parseResult(data) {
         const json = JSON.parse(data);
-        if (json.code !== 0) {
-            result.textContent = '识别错误：' + json.message;
-            return;
-        }
+        if (json.code !== 0) { result.textContent = '识别错误：' + json.message; return; }
         if (!json.data || !json.data.result) return;
-
         let text = '';
         (json.data.result.ws || []).forEach(w => (w.cw || []).forEach(c => text += c.w));
         if (!text) return;
-
         if (json.data.result.pgs === 'rpl') {
             fullText = json.data.result.rg ? fullText.substring(0, json.data.result.rg[0]) + text : text;
-        } else {
-            fullText += text;
-        }
-
+        } else fullText += text;
         result.textContent = '你说：' + fullText;
-        if (json.data.status === 2) {
-            executeCommand(fullText);
-            fullText = '';
-        }
+        if (json.data.status === 2) { executeCommand(fullText); fullText = ''; }
     }
 
     function sendFrame(base64, status) {
@@ -272,15 +255,8 @@
     function cleanupAudio() {
         clearInterval(sendInterval);
         sendInterval = null;
-        if (processor) {
-            processor.onaudioprocess = null;
-            processor.disconnect();
-            processor = null;
-        }
-        if (mediaStream) {
-            mediaStream.getTracks().forEach(t => t.stop());
-            mediaStream = null;
-        }
+        if (processor) { processor.onaudioprocess = null; processor.disconnect(); processor = null; }
+        if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
         pcmBuffer = [];
         frameStatus = 0;
     }
@@ -302,17 +278,7 @@
         voiceBtn.classList.remove('active');
         voiceBtn.disabled = false;
         isBusy = false;
-        if (showMsg) {
-            result.textContent = '已关闭监听';
-            setStatus('已停止');
-        }
-    }
-
-    async function ensureAudioContext() {
-        const Ctx = window.AudioContext || window.webkitAudioContext;
-        if (!audioContext || audioContext.state === 'closed') audioContext = new Ctx();
-        if (audioContext.state === 'suspended') await audioContext.resume();
-        return audioContext.state === 'running';
+        if (showMsg) { result.textContent = '已关闭监听'; setStatus('已停止'); }
     }
 
     function startCapture() {
@@ -320,37 +286,18 @@
         processor = audioContext.createScriptProcessor(4096, 1, 1);
         const gain = audioContext.createGain();
         gain.gain.value = 0;
-
         processor.onaudioprocess = e => {
             if (!isListening) return;
             const pcm = resampleTo16k(e.inputBuffer.getChannelData(0), audioContext.sampleRate);
             pcmBuffer.push(floatTo16BitPCM(pcm));
         };
-
         source.connect(processor);
         processor.connect(gain);
         gain.connect(audioContext.destination);
     }
 
-    async function unlockMedia() {
-        try {
-            video.muted = true;
-            await video.play();
-            video.pause();
-            video.muted = false;
-            await audio.play();
-            audio.pause();
-        } catch (e) {}
-    }
-
     async function startListening() {
         if (isBusy) return;
-
-        if (!detectEnvironment()) {
-            result.textContent = '当前环境不满足要求，请查看上方提示';
-            return;
-        }
-
         const cfg = getConfig();
         if (!cfg.appId || !cfg.apiKey || !cfg.apiSecret) {
             result.textContent = '请先填写讯飞密钥';
@@ -362,15 +309,16 @@
         manualStop = false;
 
         try {
+            // 步骤1：等待音频引擎（已在点击时同步唤醒）
+            setStatus('启动音频引擎...');
+            await waitAudioRunning(5000);
+            setStatus('音频引擎已就绪：' + audioContext.state + ' / ' + audioContext.sampleRate + 'Hz');
+
+            // 步骤2：再申请麦克风
             setStatus('申请麦克风中...');
             mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-            setStatus('启动音频引擎...');
-            const ok = await ensureAudioContext();
-            if (!ok) throw new Error('AudioContext 未能启动，请再点一次');
-
-            await unlockMedia();
-
+            // 步骤3：连接讯飞
             setStatus('连接讯飞中...');
             cleanupWS();
             ws = new WebSocket(await getWebSocketUrl(cfg.apiKey, cfg.apiSecret));
@@ -379,10 +327,9 @@
             fullText = '';
 
             ws.onopen = () => {
-                setStatus(`监听中 | 采样率 ${audioContext.sampleRate} → 16000`);
-                result.textContent = '正在监听，请说话...';
+                setStatus('监听中，请说话...');
+                result.textContent = '正在监听，请说：播放视频 / 暂停音乐';
                 startCapture();
-
                 sendInterval = setInterval(() => {
                     if (!isListening || !ws || ws.readyState !== WebSocket.OPEN) return;
                     const merged = pcmBuffer.length ? mergeBuffers(pcmBuffer) : new ArrayBuffer(0);
@@ -390,7 +337,6 @@
                     sendFrame(merged.byteLength ? toBase64(merged) : '', frameStatus);
                     if (frameStatus === 0) frameStatus = 1;
                 }, 200);
-
                 isListening = true;
                 voiceBtn.textContent = '关闭语音监听';
                 voiceBtn.classList.add('active');
@@ -399,16 +345,17 @@
             };
 
             ws.onmessage = e => { try { parseResult(e.data); } catch (err) { console.error(err); } };
-            ws.onerror = () => { result.textContent = '连接讯飞失败，请检查密钥或网络'; stopListening(false); };
+            ws.onerror = () => { result.textContent = '连接讯飞失败'; stopListening(false); };
             ws.onclose = () => {
                 if (isListening && !manualStop) {
                     result.textContent = '连接断开，请重新开启';
                     stopListening(false);
                 }
             };
+
         } catch (err) {
-            result.textContent = '启动失败：' + (err.message || err.name);
-            setStatus('错误：' + err.name);
+            result.textContent = err.message || ('启动失败：' + err.name);
+            setStatus('出错，已重置');
             stopListening(false);
         }
     }
@@ -418,7 +365,17 @@
             stopListening(true);
             return;
         }
+
         stopListening(false);
+
+        try {
+            // ★ 最关键：点击瞬间就唤醒 AudioContext，不要放在 await 后面
+            unlockAudioContextSync();
+        } catch (err) {
+            result.textContent = err.message;
+            return;
+        }
+
         await startListening();
     };
 
