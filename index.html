@@ -13,7 +13,7 @@
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-            background: #fcfcff;
+            background: #fcfcff url('assets/active-bg.jpg') center center / cover no-repeat fixed;
             color: #1a1a1a;
             min-height: 100vh;
             min-height: 100dvh;
@@ -381,7 +381,7 @@
 <div class="center-wrap">
     <div class="mascot-wrap" id="mascotWrap">
         <div class="mascot-bubble" id="mascotBubble"></div>
-        <img id="mascotGif" src="assets/mascot.gif" alt="吉祥物" onerror="this.onerror=null;this.src='mascot.gif'">
+        <img id="mascotGif" src="assets/mascot.gif" alt="吉祥物">
     </div>
     <div class="input-box">
         <span class="input-placeholder" id="placeholder">发消息...</span>
@@ -404,17 +404,19 @@
     <div class="media-wrap">
         <video id="stageVideo" playsinline webkit-playsinline x5-playsinline preload="auto"></video>
     </div>
+    <audio id="stageMusic" preload="auto"></audio>
 </div>
 
 <script>
 (function () {
     'use strict';
 
-    const VIDEO_POOL = [
-        { url: 'https://www.w3school.com.cn/example/html5/mov_bbb.mp4', title: '开幕式视频' },
-        { url: 'https://www.w3school.com.cn/i/movie.mp4', title: '备用视频' },
-        { url: 'assets/videos/opening.mp4', title: '本地视频' },
-    ];
+    const ASSETS = {
+        bg: 'assets/active-bg.jpg',
+        mascot: 'assets/mascot.gif',
+        video: 'assets/video.mp4',
+        music: 'assets/music.mp3'
+    };
 
     const BEAR_REPLIES = [
         '收到！精彩即将开始～',
@@ -436,6 +438,7 @@
     const fadeOverlay = $('fadeOverlay');
     const stage = $('stage');
     const stageVideo = $('stageVideo');
+    const stageMusic = $('stageMusic');
     const bannerTitle = $('bannerTitle');
     const bannerSub = $('bannerSub');
     const particles = $('particles');
@@ -447,7 +450,7 @@
     let sendInterval = null, reconnectTimer = null, isConnecting = false;
     let pcmBuffer = [], frameStatus = 0, fullText = '', reconnectCount = 0;
     let ceremonyBusy = false, lastCmdTime = 0, mediaUnlocked = false;
-    let preloadedVideoItem = null;
+    let mediaPreloaded = false;
 
     $('configToggle').onclick = () => $('configPanel').classList.toggle('show');
 
@@ -489,62 +492,77 @@
         await delay(1400);
     }
 
-    async function ensureVideoReady() {
-        if (preloadedVideoItem && stageVideo.readyState >= 3 && stageVideo.src) {
-            return preloadedVideoItem;
-        }
-        return loadVideoWithFallback();
+    async function ensureMediaReady() {
+        if (mediaPreloaded && stageVideo.readyState >= 3) return;
+        await preloadMedia();
     }
 
     async function unlockMediaPlayback() {
         if (mediaUnlocked) return;
         try {
-            const url = (VIDEO_POOL.find(v => v.url.startsWith('http')) || VIDEO_POOL[0]).url;
             stageVideo.muted = true;
-            if (!stageVideo.src) stageVideo.src = url;
+            stageVideo.src = ASSETS.video;
             stageVideo.load();
             await stageVideo.play();
             stageVideo.pause();
             stageVideo.currentTime = 0;
             stageVideo.muted = false;
+
+            stageMusic.src = ASSETS.music;
+            stageMusic.load();
+            await stageMusic.play();
+            stageMusic.pause();
+            stageMusic.currentTime = 0;
+
             mediaUnlocked = true;
         } catch (e) { console.warn('unlock media', e); }
     }
 
-    /* 开启麦克风后立刻预加载到 stageVideo，说「发布」时直接播放 */
-    function startVideoPreload() {
-        if (ceremonyBusy || preloadedVideoItem) return;
-        const item = VIDEO_POOL.find(v => v.url.startsWith('http')) || VIDEO_POOL[0];
-        const onReady = () => {
-            preloadedVideoItem = item;
-            stageVideo.removeEventListener('canplay', onReady);
-            stageVideo.removeEventListener('error', onErr);
-        };
-        const onErr = () => {
-            stageVideo.removeEventListener('canplay', onReady);
-            stageVideo.removeEventListener('error', onErr);
-        };
-        stageVideo.addEventListener('canplay', onReady);
-        stageVideo.addEventListener('error', onErr);
-        stageVideo.src = item.url;
-        stageVideo.load();
-        if (stageVideo.readyState >= 3) onReady();
-    }
-
-    function waitVideoReady(video, timeoutMs) {
+    function waitMediaCanPlay(el, timeoutMs) {
         return new Promise((resolve, reject) => {
-            if (video.readyState >= 3) { resolve(); return; }
-            const timer = setTimeout(() => { cleanup(); reject(new Error('加载超时')); }, timeoutMs || 5000);
-            const onCanPlay = () => { cleanup(); resolve(); };
-            const onError = () => { cleanup(); reject(new Error('视频加载失败')); };
+            if (el.readyState >= 3) { resolve(); return; }
+            const timer = setTimeout(() => { cleanup(); reject(new Error('加载超时')); }, timeoutMs || 8000);
+            const onReady = () => { cleanup(); resolve(); };
+            const onError = () => { cleanup(); reject(new Error('媒体加载失败')); };
             const cleanup = () => {
                 clearTimeout(timer);
-                video.removeEventListener('canplay', onCanPlay);
-                video.removeEventListener('error', onError);
+                el.removeEventListener('canplay', onReady);
+                el.removeEventListener('error', onError);
             };
-            video.addEventListener('canplay', onCanPlay, { once: true });
-            video.addEventListener('error', onError, { once: true });
+            el.addEventListener('canplay', onReady, { once: true });
+            el.addEventListener('error', onError, { once: true });
         });
+    }
+
+    /* 开启麦克风后预加载本地视频和音乐 */
+    function startMediaPreload() {
+        if (ceremonyBusy || mediaPreloaded) return;
+        preloadMedia().catch(() => {});
+    }
+
+    async function preloadMedia() {
+        stageVideo.src = ASSETS.video;
+        stageVideo.load();
+        stageMusic.src = ASSETS.music;
+        stageMusic.load();
+        await Promise.all([
+            waitMediaCanPlay(stageVideo, 8000),
+            waitMediaCanPlay(stageMusic, 8000)
+        ]);
+        mediaPreloaded = true;
+    }
+
+    async function playCeremonyMedia() {
+        stageVideo.currentTime = 0;
+        stageMusic.currentTime = 0;
+        stageVideo.muted = true;
+        try {
+            await Promise.all([stageVideo.play(), stageMusic.play()]);
+            stageVideo.muted = false;
+        } catch (e) {
+            stageVideo.muted = false;
+            await Promise.all([stageVideo.play(), stageMusic.play()]);
+        }
     }
 
     function spawnParticles() {
@@ -559,54 +577,16 @@
         }
     }
 
-    function preloadVideo(url, timeoutMs) {
-        return new Promise((resolve, reject) => {
-            const timer = setTimeout(() => { cleanup(); reject(new Error('加载超时')); }, timeoutMs || 10000);
-            const onCanPlay = () => { cleanup(); resolve(); };
-            const onError = () => { cleanup(); reject(new Error('视频加载失败')); };
-            const cleanup = () => {
-                clearTimeout(timer);
-                stageVideo.removeEventListener('canplay', onCanPlay);
-                stageVideo.removeEventListener('error', onError);
-            };
-            stageVideo.src = url;
-            stageVideo.load();
-            if (stageVideo.readyState >= 3) onCanPlay();
-            else {
-                stageVideo.addEventListener('canplay', onCanPlay, { once: true });
-                stageVideo.addEventListener('error', onError, { once: true });
-            }
-        });
-    }
-
-    async function loadVideoWithFallback() {
-        let lastErr;
-        for (const item of VIDEO_POOL) {
-            try {
-                if (preloadedVideoItem && item.url === preloadedVideoItem.url && stageVideo.readyState >= 3) {
-                    return item;
-                }
-                bannerSub.textContent = '正在加载：' + item.title;
-                await preloadVideo(item.url, 6000);
-                preloadedVideoItem = item;
-                return item;
-            } catch (e) {
-                lastErr = e;
-                console.warn('视频源失败', item.url, e);
-            }
-        }
-        throw lastErr || new Error('所有视频源不可用');
-    }
-
-    async function safePlayVideo() {
-        stageVideo.muted = true;
-        try {
-            await stageVideo.play();
-            stageVideo.muted = false;
-        } catch (e) {
-            stageVideo.muted = false;
-            await stageVideo.play();
-        }
+    function resetStageDOM() {
+        stageVideo.pause();
+        stageMusic.pause();
+        stageVideo.onended = null;
+        stage.className = 'stage';
+        stageVideo.classList.remove('active');
+        document.body.classList.remove('video-mode', 'transitioning');
+        fadeOverlay.classList.remove('active');
+        if (stageVideo.src) stageVideo.currentTime = 0;
+        if (stageMusic.src) stageMusic.currentTime = 0;
     }
 
     async function enterVideoFullscreen() {
@@ -614,7 +594,6 @@
         document.body.classList.add('video-mode');
         stage.classList.add('video-only');
 
-        /* iOS：原生全屏播放器，可隐藏 Safari 地址栏 */
         if (isIOS && typeof v.webkitEnterFullscreen === 'function') {
             v.removeAttribute('playsinline');
             v.playsInline = false;
@@ -622,7 +601,6 @@
             return;
         }
 
-        /* Android / 桌面：浏览器全屏 API，隐藏导航栏 */
         const targets = [document.documentElement, stage, v];
         for (const el of targets) {
             const fn = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
@@ -652,16 +630,6 @@
         stageVideo.playsInline = true;
     }
 
-    function resetStageDOM() {
-        stageVideo.pause();
-        stageVideo.onended = null;
-        stage.className = 'stage';
-        stageVideo.classList.remove('active');
-        document.body.classList.remove('video-mode', 'transitioning');
-        fadeOverlay.classList.remove('active');
-        if (stageVideo.src) stageVideo.currentTime = 0;
-    }
-
     function closeCeremony(exitFs) {
         ceremonyBusy = false;
         resetStageDOM();
@@ -679,7 +647,7 @@
         showMascotReply(reply);
         placeholder.textContent = reply;
 
-        const videoReady = ensureVideoReady();
+        const mediaReady = ensureMediaReady();
 
         /* 熊先说话，再柔和淡化进入视频 */
         await delay(2200);
@@ -694,17 +662,17 @@
         await playFadeTransition();
 
         try {
-            await videoReady;
+            await mediaReady;
             loadingTip.style.display = 'none';
             stage.classList.add('visible', 'playing', 'loaded', 'video-only');
             document.body.classList.add('video-mode');
 
-            await safePlayVideo();
+            await playCeremonyMedia();
             await enterVideoFullscreen();
             stageVideo.onended = () => closeCeremony(true);
         } catch (err) {
             console.error(err);
-            loadingTip.textContent = '加载失败：' + (err.message || '请检查网络');
+            loadingTip.textContent = '加载失败：' + (err.message || '请检查 assets 资源');
             ceremonyBusy = false;
             setTimeout(() => closeCeremony(true), 3000);
         }
@@ -920,7 +888,7 @@
                 reconnectCount = 0;
                 setVoiceUI(true);
                 startSendLoop();
-                startVideoPreload();
+                startMediaPreload();
             };
             ws.onmessage = e => { try { parseResult(e.data); } catch (err) {} };
             ws.onerror = () => { isConnecting = false; reconnectCount++; scheduleReconnect('异常'); };
@@ -972,7 +940,7 @@
             await ensureAudioContextReady();
             startCapture();
             isBusy = false;
-            startVideoPreload();
+            startMediaPreload();
             unlockMediaPlayback().catch(() => {});
             await connectWebSocket();
         } catch (err) {
@@ -1016,3 +984,4 @@
 </script>
 </body>
 </html>
+
