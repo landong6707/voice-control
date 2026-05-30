@@ -20,6 +20,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            padding-top: clamp(48px, 10vh, 96px);
             overflow: hidden;
         }
 
@@ -44,7 +45,8 @@
             gap: clamp(24px, 5vh, 40px);
             width: 100%;
             max-width: 720px;
-            padding: 24px;
+            padding: 24px 24px clamp(32px, 6vh, 56px);
+            margin-top: clamp(24px, 5vh, 48px);
             transition: opacity 0.4s ease, transform 0.4s ease;
         }
 
@@ -53,6 +55,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            background: transparent;
             transition: opacity 0.5s ease, transform 0.5s ease;
         }
 
@@ -100,11 +103,15 @@
         }
 
         .mascot-wrap img {
+            display: block;
             width: clamp(180px, 40vw, 280px);
             height: auto;
             object-fit: contain;
             user-select: none;
             pointer-events: none;
+            background: transparent;
+            /* GIF 导出时常带白色画布，用混合模式让白底透出背景 */
+            mix-blend-mode: darken;
         }
 
         .input-box {
@@ -984,4 +991,5 @@
 </script>
 </body>
 </html>
+
 
